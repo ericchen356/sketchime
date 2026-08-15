@@ -44,17 +44,18 @@ export async function POST(req: Request): Promise<NextResponse | Response> {
       if (!body.prompt?.trim()) {
         return NextResponse.json({ error: 'Missing prompt.' }, { status: 400 })
       }
-      if (!body.imageA || !body.imageB) {
-        return NextResponse.json(
-          { error: 'Both keyframes are required for interpolation.' },
-          { status: 400 }
-        )
+      if (!body.imageA) {
+        return NextResponse.json({ error: 'A start frame is required.' }, { status: 400 })
       }
-      const operation = await startVideo(
+      // imageB is optional on purpose: omitting it is what frees the clip from
+      // having to land on a fixed final image (guide mode).
+      // Omni Flash answers synchronously; Veo hands back an operation to poll.
+      // The client branches on which of these fields is present.
+      const started = await startVideo(
         { prompt: body.prompt, imageA: body.imageA, imageB: body.imageB },
         key
       )
-      return NextResponse.json({ operation })
+      return NextResponse.json(started)
     }
 
     if (body.action === 'poll') {

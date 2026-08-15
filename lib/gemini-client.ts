@@ -85,7 +85,8 @@ export async function revisePrompt(instruction: string, apiKey: string): Promise
 export interface GenerateInput {
   prompt: string
   imageA: string
-  imageB: string
+  /** Omit to leave the ending unconstrained (guide mode). */
+  imageB?: string
   apiKey: string
   /** Called with the operation name as soon as generation is accepted, so the
    * caller can persist it and survive a re-render. */
@@ -109,13 +110,31 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
  * The caller owns the returned URL and must revokeObjectURL it when done.
  */
 export async function generateClip(input: GenerateInput): Promise<string> {
-  const { operation } = await postJson<{ operation: string }>('/api/veo', {
+  const started = await postJson<{
+    kind?: 'operation' | 'uri' | 'inline'
+    operation?: string
+    uri?: string
+    data?: string
+    mimeType?: string
+  }>('/api/veo', {
     action: 'start',
     prompt: input.prompt,
     imageA: input.imageA,
     imageB: input.imageB,
     apiKey: input.apiKey
   })
+
+  // Omni Flash renders synchronously, so the video may already be here and
+  // there is nothing to poll for.
+  if (started.kind === 'inline' && started.data) {
+    return URL.createObjectURL(base64ToBlob(started.data, started.mimeType ?? 'video/mp4'))
+  }
+  if (started.kind === 'uri' && started.uri) {
+    return fetchVideoBlob(started.uri, input.apiKey)
+  }
+
+  const operation = started.operation
+  if (!operation) throw new Error('The video model returned nothing to wait on.')
   input.onOperation?.(operation)
 
   const deadline = Date.now() + POLL_TIMEOUT_MS
@@ -143,11 +162,24 @@ export async function generateClip(input: GenerateInput): Promise<string> {
   }
 
   if (!uri) throw new Error('Generation finished without a video.')
+  return fetchVideoBlob(uri, input.apiKey)
+}
 
+/** Decode an inline base64 video without round-tripping through the network. */
+function base64ToBlob(data: string, mimeType: string): Blob {
+  const bytes = atob(data)
+  const buf = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) buf[i] = bytes.charCodeAt(i)
+  return new Blob([buf], { type: mimeType })
+}
+
+/** Pull the finished video through our proxy - the download URL needs the API
+ * key, which must not reach the browser. */
+async function fetchVideoBlob(uri: string, apiKey: string): Promise<string> {
   const res = await fetch('/api/veo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'fetch', uri, apiKey: input.apiKey })
+    body: JSON.stringify({ action: 'fetch', uri, apiKey })
   })
   if (!res.ok) {
     const msg = (await res.json().catch(() => ({}))) as { error?: string }

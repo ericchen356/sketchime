@@ -677,7 +677,9 @@ export interface StartVideoInput {
   prompt: string
   /** Bare base64 PNG (no data: prefix). */
   imageA: string
-  imageB: string
+  /** End frame. Omit to leave the ending unconstrained - see the note at the
+   * `lastFrame` call site below. */
+  imageB?: string
   aspectRatio?: string
   negativePrompt?: string
 }
@@ -687,29 +689,173 @@ export interface StartVideoInput {
  * must be polled. `lastFrame` is what makes it an interpolation between two
  * keyframes rather than an open-ended animation from one.
  */
-export async function startVideo(input: StartVideoInput, key: string): Promise<string> {
-  const json = (await call(`/models/${VIDEO_MODEL}:predictLongRunning`, key, {
+/** The style constraints we want enforced. Sent as `negativePrompt` when the
+ * model supports it, and folded into the prompt text when it does not - the
+ * constraint matters more than the mechanism. */
+const DEFAULT_NEGATIVE = [
+  // Style guards.
+  '3D render',
+  'photorealistic',
+  'live action',
+  'lighting shifts',
+  'gradients',
+  'soft shading',
+  'text overlays',
+  'watermark',
+  // Transition guards. The failure mode these exist for: the model animates
+  // freely, then dissolves onto the target last frame instead of moving into
+  // it. Naming the artefacts explicitly is the strongest lever available,
+  // because a negative prompt is weighted more heavily than prose.
+  'crossfade',
+  'dissolve',
+  'fade in',
+  'fade out',
+  'morph blend',
+  'ghosting',
+  'double exposure',
+  'onion skin overlay',
+  'jump cut',
+  'snap to pose',
+  'freeze frame',
+  'looping motion',
+  'reversed motion',
+  'stuttering'
+].join(', ')
+
+/**
+ * Which optional parameter a "not supported" 400 is complaining about.
+ * Google phrases it as: `negativePrompt` isn't supported by this model.
+ */
+function unsupportedParam(e: unknown): string | null {
+  if (!(e instanceof GeminiError) || e.status !== 400) return null
+  const m = e.message.match(/[`"']?(\w+)[`"']?\s+(?:isn't|is not)\s+supported/i)
+  return m ? m[1] : null
+}
+
+/**
+ * What a start request produced. Veo is long-running and returns an operation
+ * to poll; Omni Flash answers synchronously with the video itself, either
+ * inline or behind a file URI. Callers branch on `kind` rather than assuming.
+ */
+export type StartResult =
+  | { kind: 'operation'; operation: string }
+  | { kind: 'uri'; uri: string }
+  | { kind: 'inline'; data: string; mimeType: string }
+
+const OMNI_PREFIX = 'gemini-omni'
+export const isOmniModel = (model: string): boolean => model.startsWith(OMNI_PREFIX)
+
+/**
+ * Gemini Omni Flash, via the Interactions API.
+ *
+ * A completely different surface from Veo: POST /interactions, a flat `input`
+ * array of typed parts, and a synchronous reply containing a `steps` timeline.
+ * Notably it takes only ONE image, so there is no last-frame pinning here at
+ * all - which suits guide mode exactly, and rules it out for chained seams.
+ */
+async function startOmni(
+  model: string,
+  input: StartVideoInput,
+  key: string
+): Promise<StartResult> {
+  const prompt = `${input.prompt}\n\n[AVOID]: ${input.negativePrompt ?? DEFAULT_NEGATIVE}.`
+
+  const json = (await call('/interactions', key, {
     method: 'POST',
     body: {
-      instances: [
-        {
-          prompt: input.prompt,
-          image: { bytesBase64Encoded: input.imageA, mimeType: 'image/png' },
-          lastFrame: { bytesBase64Encoded: input.imageB, mimeType: 'image/png' }
-        }
+      model,
+      input: [
+        { type: 'image', data: input.imageA, mime_type: 'image/png' },
+        { type: 'text', text: prompt }
       ],
-      parameters: {
-        aspectRatio: input.aspectRatio ?? '16:9',
-        negativePrompt:
-          input.negativePrompt ??
-          '3D render, photorealistic, live action, lighting shifts, gradients, soft shading, text overlays, watermark',
-        personGeneration: 'allow_adult'
+      response_format: {
+        type: 'video',
+        aspect_ratio: input.aspectRatio ?? '16:9'
       }
-    }
-  })) as { name?: string }
+    },
+    // Synchronous generation, so this waits for the whole render rather than
+    // for an acknowledgement.
+    timeoutMs: 5 * 60 * 1000
+  })) as {
+    steps?: { type?: string; content?: { type?: string; mime_type?: string; data?: string; uri?: string }[] }[]
+    status?: string
+  }
 
-  if (!json.name) throw new GeminiError('Gemini did not return an operation name.', 502)
-  return json.name
+  // Walk the timeline for the first video part, rather than assuming its index:
+  // the steps list also carries user_input and thought entries.
+  for (const step of json.steps ?? []) {
+    for (const part of step.content ?? []) {
+      if (part.type !== 'video') continue
+      if (part.uri) return { kind: 'uri', uri: part.uri }
+      if (part.data) return { kind: 'inline', data: part.data, mimeType: part.mime_type ?? 'video/mp4' }
+    }
+  }
+
+  throw new GeminiError(
+    `Omni Flash returned no video (status: ${json.status ?? 'unknown'}). See lib/server/gemini.ts if the response shape has changed.`,
+    502
+  )
+}
+
+export async function startVideo(input: StartVideoInput, key: string): Promise<StartResult> {
+  // Optional knobs, dropped one at a time as the API rejects them. Veo revisions
+  // differ in which they accept, and hardcoding a set that works today just
+  // moves the 400 to the next person's model.
+  const optional: Record<string, unknown> = {
+    aspectRatio: input.aspectRatio ?? '16:9',
+    negativePrompt: input.negativePrompt ?? DEFAULT_NEGATIVE,
+    personGeneration: 'allow_adult'
+  }
+
+  const send = (): Promise<unknown> =>
+    withModel(key, 'video', (model) =>
+      // Two entirely different APIs behind one call site.
+      isOmniModel(model)
+        ? startOmni(model, input, key)
+        : call(`/models/${model}:predictLongRunning`, key, {
+        method: 'POST',
+        body: {
+          instances: [
+            {
+              // If negativePrompt got dropped, its content moves into the prompt
+              // so "no 3D, no photorealism" is still actually asked for.
+              prompt:
+                'negativePrompt' in optional
+                  ? input.prompt
+                  : `${input.prompt}\n\n[AVOID]: ${input.negativePrompt ?? DEFAULT_NEGATIVE}.`,
+              image: { bytesBase64Encoded: input.imageA, mimeType: 'image/png' },
+              // `lastFrame` is a HARD constraint: supply it and Veo must land on
+              // that exact image, reconciling any divergence with a snap, a
+              // regression or a fade. Only sent when the caller genuinely needs
+              // the clip pinned - i.e. when a following clip starts from it.
+              ...(input.imageB
+                ? { lastFrame: { bytesBase64Encoded: input.imageB, mimeType: 'image/png' } }
+                : {})
+            }
+          ],
+            parameters: { ...optional }
+          }
+        })
+    )
+
+  let json: unknown
+  // One pass per optional parameter, worst case.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      json = await send()
+      break
+    } catch (e) {
+      const param = unsupportedParam(e)
+      if (!param || !(param in optional) || attempt > Object.keys(optional).length) throw e
+      delete optional[param]
+    }
+  }
+
+  // Omni already returned the finished video; Veo returned an operation name.
+  const result = json as Partial<StartResult> & { name?: string }
+  if (result.kind) return result as StartResult
+  if (result.name) return { kind: 'operation', operation: result.name }
+  throw new GeminiError('The video model returned neither an operation nor a video.', 502)
 }
 
 export interface PollResult {
