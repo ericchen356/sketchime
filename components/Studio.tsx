@@ -136,11 +136,10 @@ export function Studio(): React.JSX.Element {
     const created = next.clips[next.clips.length - 1]
 
     setStoryboard(next)
+    // Stay on the storyboard and just select the new clip. Jumping straight
+    // into the canvas hides the board the user was working on; they open the
+    // drawing surface themselves by clicking a keyframe thumbnail.
     setSelectedId(created.id)
-    // Straight into drawing: a new clip with two blank frames has nothing to
-    // look at, so land the user where the work is. The first clip starts on A;
-    // a chained clip's A is already drawn, so start on B.
-    setEditing({ clipId: created.id, side: sb.clips.length === 0 ? 'start' : 'end' })
   }, [])
 
   /** Any input change invalidates the compiled prompt, so recompile in place. */
