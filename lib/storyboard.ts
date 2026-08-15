@@ -1,4 +1,12 @@
-import { emptySketch, type Clip, type EndFrameMode, type Frame, type Sketch, type Storyboard } from './types'
+import { cloneSketch } from './ink'
+import {
+  emptySketch,
+  type Clip,
+  type EndFrameMode,
+  type Frame,
+  type Sketch,
+  type Storyboard
+} from './types'
 
 export const newId = (): string => crypto.randomUUID()
 
@@ -90,6 +98,23 @@ export function setFrameSketch(sb: Storyboard, frameId: string, sketch: Sketch):
 
 export function getSketch(sb: Storyboard, frameId: string | undefined): Sketch {
   return (frameId && sb.frames[frameId]?.sketch) || emptySketch()
+}
+
+/**
+ * Copy one frame's drawing into another. Used to seed an end keyframe from its
+ * start so only the parts that move have to be redrawn.
+ *
+ * The target is REPLACED, and the copy is independent - editing either frame
+ * afterwards leaves the other alone. Callers must confirm first when the target
+ * is not empty, since this discards whatever was there.
+ */
+export function copyFrameInto(sb: Storyboard, fromId: string, toId: string): Storyboard {
+  const src = sb.frames[fromId]
+  const dest = sb.frames[toId]
+  // Copying a frame onto itself would be a no-op at best; guard it so a shared
+  // boundary frame can never be silently duplicated over itself.
+  if (!src || !dest || fromId === toId) return sb
+  return setFrameSketch(sb, toId, cloneSketch(src.sketch))
 }
 
 /**

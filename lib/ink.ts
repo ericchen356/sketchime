@@ -82,6 +82,28 @@ export function sketchText(sketch: Sketch): string {
     .join(' ')
 }
 
+/**
+ * Independent copy of a sketch. Every stroke gets a fresh id and its own points
+ * array, so the copy and the original can never alias - important when the two
+ * live in different keyframes that are about to be edited apart from each other.
+ */
+export function cloneSketch(src: Sketch): Sketch {
+  return {
+    strokes: src.strokes.map((s) => ({
+      ...s,
+      id: crypto.randomUUID(),
+      points: s.points.map((p) => ({ ...p }))
+    })),
+    texts: src.texts.map((t) => ({ ...t, id: crypto.randomUUID() }))
+  }
+}
+
+/** Stack one sketch on top of another, keeping both. */
+export function mergeSketches(base: Sketch, add: Sketch): Sketch {
+  const copy = cloneSketch(add)
+  return { strokes: [...base.strokes, ...copy.strokes], texts: [...base.texts, ...copy.texts] }
+}
+
 export function newStroke(color: string, first: InkPoint): Stroke {
   return { id: crypto.randomUUID(), points: [first], color }
 }

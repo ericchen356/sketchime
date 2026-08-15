@@ -8,6 +8,7 @@ import { ClipDetail } from './ClipDetail'
 import { SettingsDialog } from './SettingsDialog'
 import { compilePrompt, revisionInstruction } from '@/lib/compile'
 import { BOARD_H, BOARD_W, renderClipFrames } from '@/lib/render'
+import { isEmpty } from '@/lib/ink'
 import {
   describeFrame,
   fetchConfig,
@@ -20,6 +21,7 @@ import {
 import {
   addClip,
   clipsUsingFrame,
+  copyFrameInto,
   effectiveEndMode,
   endModeReason,
   emptyStoryboard,
@@ -203,6 +205,29 @@ export function Studio(): React.JSX.Element {
   }, [])
 
   /**
+   * Seed one keyframe from the other. Destructive to the target, so it asks
+   * first whenever there is something to lose - there is no undo at this level,
+   * only inside the canvas.
+   */
+  const handleCopyFrame = useCallback((clipId: string, from: 'start' | 'end') => {
+    const sb = storyboardRef.current
+    const clip = sb.clips.find((c) => c.id === clipId)
+    if (!clip) return
+
+    const fromId = from === 'start' ? clip.startFrameId : clip.endFrameId
+    const toId = from === 'start' ? clip.endFrameId : clip.startFrameId
+    if (isEmpty(getSketch(sb, fromId))) return
+
+    if (!isEmpty(getSketch(sb, toId))) {
+      const ok = window.confirm(
+        `Replace the ${from === 'start' ? 'end' : 'start'} keyframe with a copy of the ${from} keyframe?\n\nWhat is drawn there now will be discarded.`
+      )
+      if (!ok) return
+    }
+    setStoryboard(copyFrameInto(sb, fromId, toId))
+  }, [])
+
+  /**
    * Open the board for a clip. The keyframes are rasterised HERE, once, through
    * the clip's shared box - every agent then looks at exactly the images the
    * video model will receive, so their observations match the real output.
@@ -359,6 +384,7 @@ export function Studio(): React.JSX.Element {
         sketch={getSketch(storyboard, editingFrameId)}
         onChange={(next) => handleFrameChange(editingFrameId, next)}
         ghost={getSketch(storyboard, otherId)}
+        ghostLabel={editing.side === 'start' ? 'B · end' : 'A · start'}
         header={
           <div className="canvas-header">
             <button className="btn" onClick={() => setEditing(null)}>
@@ -426,6 +452,7 @@ export function Studio(): React.JSX.Element {
         onMoveClip={(from, to) => setStoryboard((sb) => moveClip(sb, from, to))}
         onLinkSeam={handleLink}
         onUnlinkSeam={handleUnlink}
+        onCopyFrame={handleCopyFrame}
       />
 
       {selected ? (
@@ -437,6 +464,7 @@ export function Studio(): React.JSX.Element {
           onEndMode={(m) =>
             setStoryboard((sb) => updateClip(sb, selected.id, { endFrameMode: m }))
           }
+          videoModel={config?.videoModel}
           index={selectedIndex}
           storyboard={storyboard}
           busy={busy}

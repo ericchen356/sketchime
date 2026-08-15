@@ -5,6 +5,7 @@ import { FrameThumb } from './FrameThumb'
 import { answeredCount, isStepDone } from '@/lib/compile'
 import { clipBox } from '@/lib/render'
 import { getSketch, seams } from '@/lib/storyboard'
+import { isEmpty } from '@/lib/ink'
 import { BOARD_STEPS } from '@/lib/board'
 import { CLIP_SECONDS, type Clip, type Storyboard } from '@/lib/types'
 
@@ -17,6 +18,7 @@ interface Props {
   onMoveClip(from: number, to: number): void
   onLinkSeam(index: number): void
   onUnlinkSeam(index: number): void
+  onCopyFrame(clipId: string, from: 'start' | 'end'): void
 }
 
 const STATUS_LABEL: Record<Clip['status'], string> = {
@@ -35,7 +37,8 @@ export function Timeline({
   onAddClip,
   onMoveClip,
   onLinkSeam,
-  onUnlinkSeam
+  onUnlinkSeam,
+  onCopyFrame
 }: Props): React.JSX.Element {
   /** Index being dragged, and the index it is currently hovering over. Both are
    * local: a reorder only reaches the storyboard on drop. */
@@ -128,9 +131,20 @@ export function Timeline({
                     >
                       <FrameThumb sketch={start} box={box} label="A" width={132} height={74} />
                     </button>
-                    <span className="frame-arrow" aria-hidden="true">
-                      →
-                    </span>
+                    {/* The arrow doubles as the duplicate control: the common
+                        move is "B starts as a copy of A, then something moves". */}
+                    <button
+                      className="frame-arrow"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCopyFrame(clip.id, 'start')
+                      }}
+                      disabled={isEmpty(start)}
+                      title="Copy the start keyframe over the end keyframe, so you only redraw what moves"
+                    >
+                      <span aria-hidden="true">→</span>
+                      <span className="frame-arrow-label">copy</span>
+                    </button>
                     <button
                       className="frame-btn"
                       onClick={(e) => {

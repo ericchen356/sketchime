@@ -14,7 +14,14 @@ import {
   type Vec2,
   type Viewport
 } from '@/lib/camera'
-import { isEmpty, sketchBounds, splitStroke, TEXT_CHAR_W, TEXT_LINE_H } from '@/lib/ink'
+import {
+  isEmpty,
+  mergeSketches,
+  sketchBounds,
+  splitStroke,
+  TEXT_CHAR_W,
+  TEXT_LINE_H
+} from '@/lib/ink'
 import { emptySketch, type EraseMode, type Sketch, type Stroke, type TextItem, type Tool } from '@/lib/types'
 
 /** Eraser footprint, in SCREEN px - it matches the ring cursor, so it is
@@ -40,11 +47,19 @@ interface Props {
   onChange(next: Sketch): void
   /** The clip's other keyframe, drawn as an onion skin. */
   ghost?: Sketch | null
+  /** What to call that other frame in the UI, e.g. "A · start". */
+  ghostLabel?: string
   /** Chrome rendered across the top - which frame this is, and the way out. */
   header?: React.ReactNode
 }
 
-export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.Element {
+export function Canvas({
+  sketch,
+  onChange,
+  ghost,
+  ghostLabel,
+  header
+}: Props): React.JSX.Element {
   const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: 1 })
   const [viewport, setViewport] = useState<Viewport>({ w: 0, h: 0 })
   const [tool, setTool] = useState<Tool>('pen')
@@ -225,6 +240,24 @@ export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.El
     [pushHistory, setSketch]
   )
 
+  /**
+   * Duplicate the other keyframe's ink into this one. The usual way to build an
+   * end frame is "same drawing, one thing moved", so starting from an exact
+   * copy beats redrawing it and hoping the linework matches.
+   *
+   * Additive rather than destructive: it stacks on whatever is already here, so
+   * nothing is ever lost, and one undo takes the whole copy back out. Strokes
+   * are cloned with fresh ids and copied point arrays so the two frames can
+   * never alias each other.
+   */
+  const copyGhost = useCallback(() => {
+    const src = ghost
+    if (!src || (src.strokes.length === 0 && src.texts.length === 0)) return
+
+    pushHistory(sketchRef.current)
+    setSketch((prev) => mergeSketches(prev, src))
+  }, [ghost, pushHistory, setSketch])
+
   /** Clear the canvas. Undoable - a full wipe is exactly the action you most
    * want back after a misclick. */
   const clearSketch = useCallback(() => {
@@ -386,6 +419,9 @@ export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.El
       // Onion skin on/off, so the other keyframe can be checked and dismissed
       // without leaving the drawing hand.
       if (key === 'g') setShowGhost((v) => !v)
+      // Shift+D duplicates the other keyframe here. Shifted so it can't be hit
+      // while reaching for `d` (the pen).
+      if (key === 'd' && e.shiftKey) copyGhost()
       // Ink colours: 1-9 then 0 for the tenth.
       if (/^[0-9]$/.test(e.key) && e.key !== '0') {
         const swatch = PALETTE[Number(e.key) - 1]
@@ -401,7 +437,7 @@ export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.El
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undo, bumpBrush, fitToContent])
+  }, [undo, bumpBrush, fitToContent, copyGhost])
 
   /* ---------- render ---------- */
 
@@ -410,6 +446,8 @@ export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.El
   // The dot grid is painted on this fixed element, so it has to be driven from
   // the camera by hand - otherwise it sits still while the world moves under it.
   const grid = gridPattern(camera, viewport)
+  const ghostStrokes = ghost?.strokes.length ?? 0
+  const ghostTexts = ghost?.texts.filter((t) => t.text.trim()).length ?? 0
 
   return (
     <div
@@ -492,13 +530,24 @@ export function Canvas({ sketch, onChange, ghost, header }: Props): React.JSX.El
       {header}
 
       {ghost && (
-        <button
-          className={`ghost-toggle ${showGhost ? 'ghost-toggle-on' : ''}`}
-          onClick={() => setShowGhost((v) => !v)}
-          title="Onion skin: show the clip's other keyframe (g)"
-        >
-          onion skin {showGhost ? 'on' : 'off'}
-        </button>
+        <div className="frame-tools">
+          <button
+            className={`ghost-toggle ${showGhost ? 'ghost-toggle-on' : ''}`}
+            onClick={() => setShowGhost((v) => !v)}
+            title="Onion skin: show the clip's other keyframe (g)"
+          >
+            onion skin {showGhost ? 'on' : 'off'}
+          </button>
+          <button
+            className="ghost-toggle"
+            onClick={copyGhost}
+            disabled={ghostStrokes === 0 && ghostTexts === 0}
+            title={`Duplicate every stroke from ${ghostLabel ?? 'the other keyframe'} into this frame, then move what changes (shift+D). Undoable.`}
+          >
+            copy {ghostLabel ?? 'other frame'}
+            {ghostStrokes > 0 && <span className="ghost-count">{ghostStrokes}</span>}
+          </button>
+        </div>
       )}
 
       <Rail
