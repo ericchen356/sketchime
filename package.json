@@ -1,0 +1,24 @@
+{
+  "name": "sketchime",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.4.1",
+    "perfect-freehand": "^1.2.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5"
+  }
+}
