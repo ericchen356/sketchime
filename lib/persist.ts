@@ -11,6 +11,12 @@ import type { Clip, Frame, Sketch, Storyboard } from './types'
  * Only the authored work is saved. Anything derived, transient, or invalid
  * after a reload is deliberately dropped - see `strip`.
  */
+/**
+ * Keeps the app's previous name on purpose. Multi-board storage superseded this
+ * key, so the only thing still reading it is the one-time import in
+ * `lib/boards.ts` — and a key naming historical data has to match the history,
+ * not the current brand. Renaming it would quietly find nothing.
+ */
 const KEY = 'sketchime.storyboard'
 /** Bump when the shape changes incompatibly; older payloads are then ignored
  * rather than crashing the app with half-understood data. */

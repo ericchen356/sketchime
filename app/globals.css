@@ -1,5 +1,5 @@
 /* ================================================================
- * sketchime — design tokens
+ * SketchMotion — design tokens
  *
  * Everything visual comes from a token. Nothing below this block should
  * contain a raw colour, because the app has two themes and a hardcoded hex
@@ -41,10 +41,10 @@
   --line-strong: rgba(22, 22, 26, 0.14);
 
   /* ---- accent ---- */
-  --accent: #6d4aff;
-  --accent-soft: rgba(109, 74, 255, 0.1);
-  --accent-line: rgba(109, 74, 255, 0.36);
-  --focus: #6d4aff;
+  --accent: #2e6ecb;
+  --accent-soft: rgba(46, 110, 203, 0.1);
+  --accent-line: rgba(46, 110, 203, 0.38);
+  --focus: #2e6ecb;
 
   /* ---- state ---- */
   --success: #2f7350;
@@ -271,10 +271,10 @@ button:disabled {
   background: var(--accent);
   border-color: transparent;
   font-weight: 650;
-  box-shadow: 0 1px 2px rgba(109, 74, 255, 0.3), 0 6px 16px rgba(109, 74, 255, 0.18);
+  box-shadow: 0 1px 2px rgba(46, 110, 203, 0.26), 0 6px 16px rgba(46, 110, 203, 0.16);
 }
 .btn-primary:hover:not(:disabled) {
-  background: #5c3ae6;
+  background: #2a63b8;
   border-color: transparent;
 }
 
@@ -629,12 +629,6 @@ button:disabled {
   max-width: 24ch;
 }
 
-.welcome-lead {
-  max-width: 52ch;
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--muted);
-}
 
 /* Two sheets and an arrow: the whole product in one picture. */
 .welcome-art {

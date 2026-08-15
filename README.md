@@ -1,4 +1,4 @@
-# sketchime
+# SketchMotion
 
 A multi-clip storyboard tool for hand-drawn 2D animation. Draw keyframes on an
 infinite canvas, direct each transition through a four-person crew, and render

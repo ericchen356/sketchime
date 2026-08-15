@@ -567,7 +567,7 @@ export function Studio({ boardId }: Props): React.JSX.Element {
           <Link href="/" className="brand-mark brand-home" aria-label="All boards" title="All boards">
             <Icon name="frames" size={16} />
           </Link>
-          {boardName || 'sketchime'}
+          {boardName || 'SketchMotion'}
         </h1>
 
         <div className="topbar-actions">
@@ -741,55 +741,42 @@ function Welcome({
 
       {/* h2, not h1: the app name in the top bar is the page's h1, and two of
           them would leave a screen reader with no single page title. */}
-      <h2>Draw two pictures. Get the movement in between.</h2>
-      <p className="welcome-lead">
-        Sketch where a shot starts and where it ends. A small crew asks you what should happen
-        between them, then animates it.
-      </p>
+      <h2>Draw two frames. Get the movement between them.</h2>
 
       <button className="btn btn-primary btn-large" onClick={onStart}>
         <Icon name="plus" size={18} />
         Start your first clip
       </button>
 
+      {/* Three words, not three paragraphs. Someone on this screen has not
+          drawn anything yet, so prose about how the crew works is answering a
+          question they have not asked. The product explains itself once they
+          are inside it. */}
       <div className="welcome-steps">
         <article className="welcome-step">
           <h3>
             <span className="step-num">1</span>
             Draw
           </h3>
-          <p>
-            Two frames per clip: the first and the last. The second one usually starts as a copy of
-            the first, with one thing moved.
-          </p>
+          <p>A first and last frame.</p>
         </article>
         <article className="welcome-step">
           <h3>
             <span className="step-num">2</span>
             Direct
           </h3>
-          <p>
-            Four specialists look at your actual drawings and ask about timing, camera, physics and
-            background — one question at a time.
-          </p>
+          <p>Answer a few questions about the shot.</p>
         </article>
         <article className="welcome-step">
           <h3>
             <span className="step-num">3</span>
             Watch
           </h3>
-          <p>
-            Every clip is five seconds. Chain them together and save the lot as one video when you
-            are happy.
-          </p>
+          <p>Five seconds, animated.</p>
         </article>
       </div>
 
-      <p className="empty">
-        {needsKey
-          ? 'Drawing works right now. Connect a Gemini key when you are ready to animate.'
-          : 'Your work is saved in this browser as you go.'}
-      </p>
+      {needsKey && <p className="empty">Connect a Gemini key when you are ready to animate.</p>}
     </div>
   )
 }

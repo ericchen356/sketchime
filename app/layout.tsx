@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'sketchime',
+  title: 'SketchMotion',
   description: 'Draw two pictures. Get the movement in between.'
 }
 

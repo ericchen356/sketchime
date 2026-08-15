@@ -218,7 +218,7 @@ export function FinalCut({ storyboard }: Props): React.JSX.Element | null {
               <a
                 className="btn btn-primary"
                 href={output.url}
-                download={`sketchime.${output.extension}`}
+                download={`sketchmotion.${output.extension}`}
               >
                 <Icon name="download" size={15} />
                 Download ({(output.bytes / 1_000_000).toFixed(1)} MB)

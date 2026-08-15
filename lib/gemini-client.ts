@@ -5,7 +5,7 @@
  */
 
 /** Session-only, per the no-persistence rule: cleared when the tab closes. */
-const KEY_STORAGE = 'sketchime.gemini.key'
+const KEY_STORAGE = 'sketchmotion.gemini.key'
 
 export function loadApiKey(): string {
   if (typeof window === 'undefined') return ''

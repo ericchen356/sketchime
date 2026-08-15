@@ -9,10 +9,20 @@ import type { Storyboard } from './types'
  * rewrite every other board on every stroke - and so one corrupt board cannot
  * take the rest down with it.
  */
-const INDEX_KEY = 'sketchime.boards'
-const BOARD_PREFIX = 'sketchime.board.'
+const INDEX_KEY = 'sketchmotion.boards'
+const BOARD_PREFIX = 'sketchmotion.board.'
+/**
+ * The same keys under the app's previous name. Renaming the app renamed these
+ * with it, so anything already in a browser has to be carried across or the
+ * library silently comes back empty. See `migrateBrand`.
+ */
+const OLD_INDEX_KEY = 'sketchime.boards'
+const OLD_BOARD_PREFIX = 'sketchime.board.'
 /** The single-board key used before boards existed. Migrated once, then left
- * alone rather than deleted, so a downgrade does not lose the work. */
+ * alone rather than deleted, so a downgrade does not lose the work.
+ *
+ * This one keeps the old brand on purpose: it names a key that was written in
+ * the past, and a legacy key that does not match the legacy finds nothing. */
 const LEGACY_KEY = 'sketchime.storyboard'
 const INDEX_VERSION = 1
 
@@ -33,8 +43,47 @@ interface BoardIndex {
 const newId = (): string => crypto.randomUUID()
 const boardKey = (id: string): string => `${BOARD_PREFIX}${id}`
 
+/**
+ * Carry localStorage across the rename from sketchime to SketchMotion.
+ *
+ * Board bodies move one at a time and the index moves last, which makes this
+ * both idempotent and crash-safe: a failure part-way through leaves the old
+ * index in place, so the next load simply resumes with whatever is left. Only
+ * one board is ever duplicated at a time, which matters because localStorage
+ * is capped around 5MB and a board can be megabytes on its own.
+ */
+let brandMigrated = false
+function migrateBrand(): void {
+  if (brandMigrated || typeof window === 'undefined') return
+  brandMigrated = true
+  try {
+    const ls = window.localStorage
+    // Nothing to do once the index has moved, or if there was never an old one.
+    if (ls.getItem(INDEX_KEY) !== null || ls.getItem(OLD_INDEX_KEY) === null) return
+
+    for (const key of Object.keys(ls)) {
+      if (!key.startsWith(OLD_BOARD_PREFIX)) continue
+      const body = ls.getItem(key)
+      if (body === null) continue
+      ls.setItem(BOARD_PREFIX + key.slice(OLD_BOARD_PREFIX.length), body)
+      ls.removeItem(key)
+    }
+
+    // Last, so an interrupted run is detected and repeated rather than leaving
+    // an index that points at boards which have not moved yet.
+    const index = ls.getItem(OLD_INDEX_KEY)
+    if (index !== null) {
+      ls.setItem(INDEX_KEY, index)
+      ls.removeItem(OLD_INDEX_KEY)
+    }
+  } catch {
+    /* best effort - a failed migration leaves the old keys untouched */
+  }
+}
+
 function readIndex(): BoardIndex {
   if (typeof window === 'undefined') return { version: INDEX_VERSION, boards: [] }
+  migrateBrand()
   try {
     const raw = window.localStorage.getItem(INDEX_KEY)
     if (!raw) return { version: INDEX_VERSION, boards: [] }
@@ -71,6 +120,8 @@ function writeIndex(index: BoardIndex): boolean {
  * is arbitrary and looks like a bug.
  */
 export function listBoards(): BoardMeta[] {
+  // migrateLegacy reads the index, and readIndex runs the rename migration
+  // first, so the pre-boards import cannot run against a half-renamed library.
   migrateLegacy()
   return readIndex().boards.sort(
     (a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt)
@@ -94,6 +145,9 @@ export function createBoard(name?: string): BoardMeta {
 
 export function loadBoard(id: string): Storyboard | null {
   if (typeof window === 'undefined') return null
+  // Deep links open a board without listing them first, so this path has to
+  // trigger the rename migration too.
+  migrateBrand()
   try {
     const raw = window.localStorage.getItem(boardKey(id))
     if (!raw) return null
