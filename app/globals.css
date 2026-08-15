@@ -166,6 +166,14 @@ select {
 }
 
 button {
+  /* Strip the native control surface. -webkit-appearance for Safari, which
+     keeps drawing its own chrome even after background/border are cleared. */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
   cursor: pointer;
 }
 
@@ -857,26 +865,30 @@ button:disabled {
 
 /* The grip only appears on hover: it is an affordance, not information, and a
    permanent one on every card is visual noise on a screen full of cards. */
-.clip-grip {
-  display: grid;
-  place-items: center;
-  margin-left: auto;
-  color: var(--muted);
-  opacity: 0;
-  cursor: grab;
-  transition: opacity var(--t-fast) var(--ease-out);
-}
-/* Destructive, so it hides until the card is hovered - the same treatment as
-   the grip. Always-visible delete on every card invites the misclick. */
+.clip-grip,
 .clip-trash {
   display: grid;
   place-items: center;
+  /* Explicit box: with the UA padding gone these would collapse to the icon. */
+  width: 26px;
+  height: 26px;
+  flex: none;
   color: var(--muted);
+  border-radius: var(--r-sm);
   opacity: 0;
-  border-radius: var(--r-xs);
   transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out),
     background var(--t-fast) var(--ease-out);
 }
+.clip-grip {
+  margin-left: auto;
+  cursor: grab;
+}
+.clip-grip:hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+/* Destructive, so it hides until the card is hovered - the same treatment as
+   the grip. Always-visible delete on every card invites the misclick. */
 .clip-trash:hover {
   color: var(--danger);
   background: var(--danger-soft);
@@ -890,12 +902,6 @@ button:disabled {
 
 /* The grip no longer pushes to the right edge on its own - the trash sits
    beside it, so the pair is pushed over together. */
-.clip-grip {
-  margin-left: 0;
-}
-.clip-top .clip-grip {
-  margin-left: auto;
-}
 
 .clip-card:hover .clip-grip,
 .clip-card:focus-within .clip-grip {
