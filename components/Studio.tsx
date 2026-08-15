@@ -603,6 +603,7 @@ export function Studio({ boardId }: Props): React.JSX.Element {
               onLinkSeam={handleLink}
               onUnlinkSeam={handleUnlink}
               onCopyFrame={handleCopyFrame}
+          onDeleteClip={handleDelete}
             />
 
             <FinalCut storyboard={storyboard} />

@@ -11,10 +11,6 @@ interface Props {
    * shared box makes the two thumbnails line up exactly the way the exported
    * keyframes will, so the storyboard previews the real framing. */
   box?: Rect
-  /** Name of the frame, revealed on hover rather than stamped over the
-   * drawing. The previous permanent "A" / "B" badges labelled the frames with
-   * something only the documentation explained. */
-  caption?: string
   /** Shown in place of the drawing when there is nothing in it yet. */
   emptyLabel?: string
   width?: number
@@ -29,7 +25,6 @@ interface Props {
 export function FrameThumb({
   sketch,
   box,
-  caption,
   emptyLabel = 'Empty — click to draw',
   width = 160,
   height = 90
@@ -55,7 +50,6 @@ export function FrameThumb({
     <span className="thumb" style={{ width, height, aspectRatio: `${width} / ${height}` }}>
       <canvas ref={ref} style={{ width, height }} />
       {isEmpty(sketch) && <span className="thumb-empty">{emptyLabel}</span>}
-      {caption && <span className="thumb-cap">{caption}</span>}
     </span>
   )
 }

@@ -233,14 +233,18 @@ button:disabled {
   color: var(--ink);
   text-decoration: none;
   white-space: nowrap;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--r-sm);
+  background: var(--surface-sunk);
+  /* Transparent rather than absent, so hover/focus can bring a border in
+     without the control changing size. */
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
   transition: background var(--t-fast) var(--ease-out),
-    border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+    border-color var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
 }
 .btn:hover:not(:disabled) {
-  background: var(--hover);
+  background: var(--fill);
+  border-color: var(--fill-line);
 }
 .btn:active:not(:disabled) {
   transform: translateY(0.5px);
@@ -252,18 +256,18 @@ button:disabled {
 /* Exactly one primary per view. It is the highest-contrast thing on screen,
    which is what makes "what do I do next" answerable at a glance. */
 .btn-primary {
-  color: var(--on-fill);
-  /* A hair darker than --fill so it separates from the neutral chips that also
-     use the fill token. */
-  background: linear-gradient(var(--fill), var(--fill-hover));
-  border-color: var(--fill-line);
-  /* Weight and lift carry the emphasis that the old inverted slab did. */
-  font-weight: 700;
-  box-shadow: var(--shadow-1);
+  /* Accent, not ink. The neutral fill version was indistinguishable from the
+     secondary buttons, and black is what we were getting away from - a single
+     saturated action per view keeps the rest of the UI white. */
+  color: #fff;
+  background: var(--accent);
+  border-color: transparent;
+  font-weight: 650;
+  box-shadow: 0 1px 2px rgba(46, 110, 203, 0.28);
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--fill-hover);
-  border-color: var(--fill-line);
+  background: #2a63b8;
+  border-color: transparent;
 }
 
 .btn-danger {
@@ -275,10 +279,25 @@ button:disabled {
   filter: brightness(1.08);
 }
 
+/* Quiet destructive action - used where a solid red button would shout, such
+   as a Delete sitting beside a Rename on a board card. Was never defined, so
+   these rendered as ordinary buttons. */
+.btn-ghost {
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: transparent;
+}
+
 .btn-small {
   min-height: 30px;
-  padding: 0 10px;
+  padding: 0 var(--s3);
   font-size: 12.5px;
+  border-radius: var(--r-sm);
 }
 
 .btn-large {
@@ -847,6 +866,37 @@ button:disabled {
   cursor: grab;
   transition: opacity var(--t-fast) var(--ease-out);
 }
+/* Destructive, so it hides until the card is hovered - the same treatment as
+   the grip. Always-visible delete on every card invites the misclick. */
+.clip-trash {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  opacity: 0;
+  border-radius: var(--r-xs);
+  transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+.clip-trash:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.clip-card:hover .clip-trash,
+.clip-card:focus-within .clip-trash,
+.clip-trash:focus-visible {
+  opacity: 1;
+}
+
+/* The grip no longer pushes to the right edge on its own - the trash sits
+   beside it, so the pair is pushed over together. */
+.clip-grip {
+  margin-left: 0;
+}
+.clip-top .clip-grip {
+  margin-left: auto;
+}
+
 .clip-card:hover .clip-grip,
 .clip-card:focus-within .clip-grip {
   opacity: 0.75;
@@ -879,10 +929,6 @@ button:disabled {
 .frame-btn:hover .thumb {
   border-color: var(--accent);
 }
-.frame-btn:hover .thumb-cap,
-.frame-btn:focus-visible .thumb-cap {
-  opacity: 1;
-}
 
 .thumb {
   position: relative;
@@ -901,20 +947,6 @@ button:disabled {
 
 /* The frame's name, revealed on hover rather than stamped permanently on the
    drawing. "A" and "B" meant nothing to anyone who had not read the docs. */
-.thumb-cap {
-  position: absolute;
-  inset: auto 0 0 0;
-  padding: 8px 7px 4px;
-  font-size: 10.5px;
-  font-weight: 700;
-  /* No scrim. This used to be a dark gradient, which over an empty frame looked
-     like an inner shadow smeared across the bottom of the box. Plain muted text
-     on the white thumbnail says the same thing and disturbs nothing. */
-  color: var(--muted);
-  text-align: center;
-  opacity: 0;
-  transition: opacity var(--t-fast) var(--ease-out);
-}
 
 .thumb-empty {
   position: absolute;

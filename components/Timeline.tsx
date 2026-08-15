@@ -20,6 +20,7 @@ interface Props {
   onLinkSeam(index: number): void
   onUnlinkSeam(index: number): void
   onCopyFrame(clipId: string, from: 'start' | 'end'): void
+  onDeleteClip(clipId: string): void
 }
 
 /**
@@ -44,7 +45,8 @@ export function Timeline({
   onMoveClip,
   onLinkSeam,
   onUnlinkSeam,
-  onCopyFrame
+  onCopyFrame,
+  onDeleteClip
 }: Props): React.JSX.Element {
   /** Index being dragged, and the index it is currently hovering over. Both are
    * local: a reorder only reaches the storyboard on drop. */
@@ -69,13 +71,6 @@ export function Timeline({
             {clips.length} clip{clips.length === 1 ? '' : 's'} · {total} seconds
           </span>
         </h2>
-        {/* Also in the header, not only at the end of the strip: once there are
-            enough clips to scroll, the ghost card at the far end is off-screen
-            and the most common action in the app becomes invisible. */}
-        <button className="btn btn-small" onClick={onAddClip}>
-          <Icon name="plus" size={15} />
-          Add a clip
-        </button>
       </header>
 
       <div className="strip">
@@ -155,6 +150,21 @@ export function Timeline({
                   >
                     <Icon name="grip" size={16} />
                   </button>
+
+                  {/* Deleting from the card saves selecting it first. It still
+                      routes through the same confirmation as the inspector - a
+                      clip carries two drawings and possibly a paid render. */}
+                  <button
+                    className="clip-trash"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteClip(clip.id)
+                    }}
+                    aria-label={`Delete clip ${i + 1}`}
+                    title="Delete this clip"
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
                 </div>
 
                 <div className="clip-frames">
@@ -169,7 +179,6 @@ export function Timeline({
                     <FrameThumb
                       sketch={start}
                       box={box}
-                      caption="First frame"
                       width={118}
                       height={66}
                     />
@@ -202,7 +211,6 @@ export function Timeline({
                     <FrameThumb
                       sketch={end}
                       box={box}
-                      caption="Last frame"
                       width={118}
                       height={66}
                     />
