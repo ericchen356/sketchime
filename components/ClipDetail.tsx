@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { BOARD_STEPS } from '@/lib/board'
 import { answeredCount, isBoardComplete, isStepDone } from '@/lib/compile'
 import { CLIP_SECONDS, type Clip, type EndFrameMode, type Storyboard } from '@/lib/types'
+import { estimateClipCost } from '@/lib/gemini-client'
 import { getSketch } from '@/lib/storyboard'
 import { isEmpty } from '@/lib/ink'
 
@@ -16,6 +17,8 @@ interface Props {
    * sends another. This is the authoritative text.
    */
   compiled: string | null
+  /** Resolved video model, for the cost estimate. */
+  videoModel?: string
   /** How this clip's end frame is used, and why. */
   endMode: EndFrameMode
   endModeReason: string
@@ -35,6 +38,7 @@ interface Props {
 export function ClipDetail({
   clip,
   compiled,
+  videoModel,
   endMode,
   endModeReason,
   onEndMode,
@@ -66,6 +70,8 @@ export function ClipDetail({
   if (startBlank) blockers.push('start keyframe is empty')
   if (endBlank) blockers.push('end keyframe is empty')
   if (!complete) blockers.push(`board incomplete (${answeredCount(clip.board)}/4)`)
+
+  const cost = estimateClipCost(videoModel, CLIP_SECONDS)
 
   const copy = async (): Promise<void> => {
     if (!prompt) return
@@ -237,7 +243,18 @@ export function ClipDetail({
             >
               {clip.videoUrl ? 'Regenerate video' : 'Generate video'}
             </button>
-            {blockers.length > 0 && <span className="blocker-note">Needs: {blockers.join(' · ')}</span>}
+            {blockers.length > 0 ? (
+              <span className="blocker-note">Needs: {blockers.join(' · ')}</span>
+            ) : (
+              /* Generation is billed per render, and Regenerate is a fresh
+                 charge rather than a retry - so say the price before the click,
+                 not after. */
+              <span className="cost-note">
+                {cost === null
+                  ? `≈ ${CLIP_SECONDS}s render${videoModel ? ` on ${videoModel}` : ''}`
+                  : `≈ $${cost.toFixed(2)} · ${CLIP_SECONDS}s on ${videoModel}`}
+              </span>
+            )}
           </>
         )}
       </div>

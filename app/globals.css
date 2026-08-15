@@ -1417,6 +1417,13 @@ body {
   gap: 8px;
 }
 
+.cost-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .elapsed {
   margin-left: 8px;
   padding: 1px 7px;

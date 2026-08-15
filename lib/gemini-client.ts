@@ -215,6 +215,26 @@ export interface BoardTurnReply {
   directive?: string
 }
 
+/**
+ * Rough USD per second of 720p video, by model. Only used to warn the user what
+ * a click will cost - Google is the source of truth for billing, and an unknown
+ * model reports as unknown rather than guessing a number.
+ */
+const VIDEO_PRICE_PER_SEC: Record<string, number> = {
+  // Omni Flash pricing was not published on the model page at time of writing,
+  // so it is deliberately absent: the UI says "unknown" rather than inventing a
+  // number for something that bills real money.
+  'veo-3.1-lite-generate-preview': 0.05,
+  'veo-3.1-fast-generate-preview': 0.1,
+  'veo-3.1-generate-preview': 0.4
+}
+
+/** Estimated cost of one clip, or null when the model isn't in the table. */
+export function estimateClipCost(model: string | undefined, seconds: number): number | null {
+  const rate = model ? VIDEO_PRICE_PER_SEC[model] : undefined
+  return rate === undefined ? null : rate * seconds
+}
+
 /** Describe a keyframe in prose. In guide mode this is the only way the end
  * frame's content reaches the video model. */
 export async function describeFrame(
