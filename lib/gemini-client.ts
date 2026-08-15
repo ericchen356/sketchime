@@ -215,6 +215,21 @@ export interface BoardTurnReply {
   directive?: string
 }
 
+/** Describe a keyframe in prose. In guide mode this is the only way the end
+ * frame's content reaches the video model. */
+export async function describeFrame(
+  image: string,
+  intent: string,
+  apiKey: string
+): Promise<string> {
+  const { description } = await postJson<{ description: string }>(
+    '/api/describe',
+    { image, intent, apiKey },
+    BOARD_TIMEOUT_MS
+  )
+  return description
+}
+
 /** Ask one board member for its next move: another question, or its directive. */
 export async function askBoard(payload: BoardTurnPayload): Promise<BoardTurnReply> {
   return postJson<BoardTurnReply>('/api/board', payload, BOARD_TIMEOUT_MS)

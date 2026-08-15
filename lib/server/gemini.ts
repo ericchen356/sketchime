@@ -705,6 +705,56 @@ Answer as JSON matching the schema. When satisfied=true, omit question and optio
   }
 }
 
+/* ---------- describing a frame ---------- */
+
+/**
+ * Describe a drawn keyframe in prose.
+ *
+ * In 'guide' mode the video model never sees the end frame, so this text is the
+ * ENTIRE channel through which the intended destination reaches it. Kept short
+ * and physical: a video model acts on what is depicted, not on adjectives.
+ */
+export async function describeFrame(image: string, intent: string, key: string): Promise<string> {
+  const system = `You describe a single moment from a hand-drawn 2D animation.
+
+Write ONE or TWO plain sentences stating what is depicted: where the subject is, what pose it holds, and what has just happened or is about to happen. Present tense.
+
+RULES:
+- Describe only what you can actually see. Invent nothing.
+- Be concrete and physical: positions, poses, contact, direction of travel. No mood, no style adjectives, no interpretation.
+- Never mention drawing, sketching, lines, paper, frames, images, or the storyboard itself.
+- No preamble, no markdown. Output the description only.${
+    intent.trim() ? `\n\nFor context, the shot is meant to show: ${intent.trim()}` : ''
+  }`
+
+  const json = (await withModel(key, 'text', (model) =>
+    call(`/models/${model}:generateContent`, key, {
+      method: 'POST',
+      body: {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'image/png', data: image } },
+              { text: 'Describe this moment.' }
+            ]
+          }
+        ],
+        generationConfig: { temperature: 0.3 }
+      },
+      timeoutMs: BOARD_TIMEOUT_MS
+    })
+  )) as { candidates?: { content?: { parts?: { text?: string }[] } }[] }
+
+  const out = (json.candidates?.[0]?.content?.parts ?? [])
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim()
+  if (!out) throw new GeminiError('Could not describe the end frame.', 502)
+  return out.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim()
+}
+
 /* ---------- video: keyframe interpolation ---------- */
 
 export interface StartVideoInput {

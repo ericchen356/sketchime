@@ -1,4 +1,4 @@
-import { emptySketch, type Clip, type Frame, type Sketch, type Storyboard } from './types'
+import { emptySketch, type Clip, type EndFrameMode, type Frame, type Sketch, type Storyboard } from './types'
 
 export const newId = (): string => crypto.randomUUID()
 
@@ -152,6 +152,45 @@ export function unlinkSeam(sb: Storyboard, index: number): Storyboard {
     b.id,
     { startFrameId: copy.id }
   )
+}
+
+/**
+ * Whether this clip's end frame must be hit exactly.
+ *
+ * The two goals genuinely conflict. Pinning the end frame (Veo's `lastFrame`)
+ * forces the model to reconcile its natural motion with a fixed target, which
+ * is what produces the settle / regression / fade at the end of a clip. Not
+ * pinning it removes that artefact - but then the clip does not finish on a
+ * known image, and a FOLLOWING clip that starts from that image would begin
+ * with a visible jump.
+ *
+ * So the decision is made per seam rather than globally: a clip whose end frame
+ * is shared with the next clip is pinned, because continuity is the whole point
+ * of chaining. The last clip, and any clip whose seam has been cut, is free to
+ * end mid-motion. An explicit `endFrameMode` on the clip overrides this.
+ */
+export function effectiveEndMode(sb: Storyboard, clipId: string): EndFrameMode {
+  const i = sb.clips.findIndex((c) => c.id === clipId)
+  if (i === -1) return 'guide'
+
+  const clip = sb.clips[i]
+  if (clip.endFrameMode) return clip.endFrameMode
+
+  const next = sb.clips[i + 1]
+  return next && next.startFrameId === clip.endFrameId ? 'exact' : 'guide'
+}
+
+/** Why the mode came out the way it did, for the UI to explain itself. */
+export function endModeReason(sb: Storyboard, clipId: string): string {
+  const i = sb.clips.findIndex((c) => c.id === clipId)
+  const clip = sb.clips[i]
+  if (!clip) return ''
+  if (clip.endFrameMode) return 'set manually for this clip'
+
+  const next = sb.clips[i + 1]
+  return next && next.startFrameId === clip.endFrameId
+    ? `chained into clip ${i + 2}, so the end frame must match exactly`
+    : 'not chained, so the clip can end mid-motion'
 }
 
 /** Which clips would be affected by editing this frame. Drives the "shared

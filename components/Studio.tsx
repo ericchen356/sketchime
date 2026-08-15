@@ -9,6 +9,7 @@ import { SettingsDialog } from './SettingsDialog'
 import { compilePrompt, revisionInstruction } from '@/lib/compile'
 import { BOARD_H, BOARD_W, renderClipFrames } from '@/lib/render'
 import {
+  describeFrame,
   fetchConfig,
   generateClip,
   loadApiKey,
@@ -19,6 +20,8 @@ import {
 import {
   addClip,
   clipsUsingFrame,
+  effectiveEndMode,
+  endModeReason,
   emptyStoryboard,
   getSketch,
   invalidate,
@@ -65,6 +68,32 @@ export function Studio(): React.JSX.Element {
     fetchConfig().then(setConfig).catch(() => setConfig(null))
   }, [])
 
+  /**
+   * Bring every stored prompt up to date with the current compiler, once.
+   * Prompts are cached on the clip, so a compiler change (say, stronger
+   * anti-crossfade wording) would otherwise only reach clips edited afterwards
+   * - and the panel would show text that no longer matches what gets sent.
+   */
+  useEffect(() => {
+    setStoryboard((sb) => {
+      let next = sb
+      let changed = false
+      for (const c of sb.clips) {
+        const prompt = compilePrompt(c, sb.styleNote)
+        if (prompt && prompt !== c.prompt) {
+          changed = true
+          next = updateClip(next, c.id, {
+            prompt,
+            // Any earlier revision was written against the old text.
+            revisedPrompt: undefined,
+            useRevised: false
+          })
+        }
+      }
+      return changed ? next : sb
+    })
+  }, [])
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 4000)
@@ -80,6 +109,18 @@ export function Studio(): React.JSX.Element {
   const clips = storyboard.clips
   const selected = clips.find((c) => c.id === selectedId) ?? null
   const selectedIndex = clips.findIndex((c) => c.id === selectedId)
+
+  /**
+   * The prompt, derived rather than remembered. Compiling on every render costs
+   * nothing (it is string assembly) and removes a whole class of bug: there is
+   * no cached copy to go stale when the compiler improves, so what the panel
+   * shows is always exactly what generation will send.
+   */
+  const endMode = selected ? effectiveEndMode(storyboard, selected.id) : 'guide'
+  const livePrompt = useMemo(
+    () => (selected ? compilePrompt(selected, storyboard.styleNote, endMode) : null),
+    [selected, storyboard.styleNote, endMode]
+  )
 
   /* ---------- storyboard edits ---------- */
 
@@ -204,17 +245,49 @@ export function Studio(): React.JSX.Element {
 
   const handleGenerate = useCallback(
     async (clipId: string) => {
-      const clip = storyboard.clips.find((c) => c.id === clipId)
+      const sb = storyboardRef.current
+      const clip = sb.clips.find((c) => c.id === clipId)
       if (!clip) return
-      const prompt = clip.useRevised && clip.revisedPrompt ? clip.revisedPrompt : clip.prompt
+      // Recompile HERE rather than trusting clip.prompt. A stored prompt was
+      // produced by whatever the compiler said when it was last touched, so any
+      // later improvement to the compiler would silently not apply to an
+      // existing clip - you would click Regenerate and get the old wording back.
+      const mode = effectiveEndMode(sb, clipId)
+
+      // In guide mode the end frame is NOT sent to the video model, so its
+      // content has to reach the prompt as prose or the shot has no destination
+      // at all. Generated on demand and cached on the clip.
+      let described = clip.endDescription
+      if (mode === 'guide' && !described?.trim()) {
+        try {
+          const { imageB: endShot } = renderClipFrames(
+            getSketch(sb, clip.startFrameId),
+            getSketch(sb, clip.endFrameId),
+            BOARD_W,
+            BOARD_H
+          )
+          described = await describeFrame(endShot, clip.intent, apiKey)
+          setStoryboard((cur) => updateClip(cur, clipId, { endDescription: described }))
+        } catch {
+          // Not fatal: the clip still animates from the start frame, it just
+          // has less direction. Better than blocking the render outright.
+          described = undefined
+        }
+      }
+
+      const fresh = compilePrompt({ ...clip, endDescription: described }, sb.styleNote, mode)
+      // A revision made against an older prompt is stale too; only honour it
+      // when the compiled text has not moved underneath it.
+      const revisionStillValid = clip.useRevised && clip.revisedPrompt && fresh === clip.prompt
+      const prompt = revisionStillValid ? clip.revisedPrompt : fresh ?? clip.prompt
       if (!prompt) return
 
       cancelled.current.delete(clipId)
       // Rasterise both keyframes through ONE shared box, so the model doesn't
       // read a crop difference as camera movement.
       const { imageA, imageB } = renderClipFrames(
-        getSketch(storyboard, clip.startFrameId),
-        getSketch(storyboard, clip.endFrameId)
+        getSketch(sb, clip.startFrameId),
+        getSketch(sb, clip.endFrameId)
       )
 
       setStoryboard((sb) =>
@@ -225,7 +298,9 @@ export function Studio(): React.JSX.Element {
         const url = await generateClip({
           prompt,
           imageA,
-          imageB,
+          // Withheld in guide mode - that omission IS the fix for the clip
+          // settling onto a fixed final image.
+          imageB: mode === 'exact' ? imageB : undefined,
           apiKey,
           onOperation: (operation) =>
             setStoryboard((sb) => updateClip(sb, clipId, { operation })),
@@ -255,7 +330,7 @@ export function Studio(): React.JSX.Element {
         cancelled.current.delete(clipId)
       }
     },
-    [storyboard, apiKey]
+    [apiKey]
   )
 
   const handleCancel = useCallback((clipId: string) => {
@@ -356,6 +431,12 @@ export function Studio(): React.JSX.Element {
       {selected ? (
         <ClipDetail
           clip={selected}
+          compiled={livePrompt}
+          endMode={endMode}
+          endModeReason={selected ? endModeReason(storyboard, selected.id) : ''}
+          onEndMode={(m) =>
+            setStoryboard((sb) => updateClip(sb, selected.id, { endFrameMode: m }))
+          }
           index={selectedIndex}
           storyboard={storyboard}
           busy={busy}

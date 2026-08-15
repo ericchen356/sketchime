@@ -5,7 +5,8 @@ import {
   type BoardStep,
   type BoardThread,
   type BoardThreads,
-  type Clip
+  type Clip,
+  type EndFrameMode
 } from './types'
 
 /** The default when the user hasn't described their own style. */
@@ -60,22 +61,66 @@ export function stepDirective(board: BoardThreads, step: BoardStep): string {
  * Returns null when any agent is still consulting: a half-finished board must
  * never silently produce a prompt with missing direction.
  */
-export function compilePrompt(clip: Clip, styleNote: string): string | null {
+/**
+ * The transition brief. The two modes are not variations in wording - they
+ * describe fundamentally different jobs.
+ *
+ * 'exact': the end frame is pinned through the API, so the model MUST land on
+ * it. The goal is to make it arrive there by moving rather than by dissolving.
+ *
+ * 'guide': the end frame is never sent to the video model. It is described in
+ * prose instead, and the clip is explicitly permitted - encouraged - to run out
+ * mid-motion. This is the only way to remove the end-of-clip settle, because a
+ * supplied last frame is a constraint no prompt can talk its way around.
+ */
+function transitionSection(clip: Clip, intent: string, mode: EndFrameMode): string {
+  const motion = intent ? ` Motion intent: ${intent}.` : ''
+
+  if (mode === 'exact') {
+    return `[KEYFRAME TRANSITION]: One continuous, unbroken take lasting ${CLIP_SECONDS} seconds. Begin exactly at the Start Frame (Image A pose/state) and move continuously until the subject arrives at the End Frame (Image B pose/state) precisely on the final frame.${motion}
+
+The End Frame is the DESTINATION of the motion, not a separate shot pasted onto the end. The subject must physically travel into that final pose, so the last frame is simply where the movement finished. NEVER reach it by crossfade, dissolve, morph blend, ghosting, double exposure, opacity change, cut, snap or teleport.
+
+Motion must be monotonic and continuous: the subject advances toward the end state and never drifts backwards, reverses direction, overshoots and returns, stalls, loops, re-times, or regresses toward the start pose. Distribute the movement across the entire ${CLIP_SECONDS} seconds so the final second is still real, decelerating motion settling into the end pose — not a static hold, and not a sudden correction to hit the target.
+
+Where intermediate features or anatomical structures are missing between the keyframes, draw them in using the exact stroke weight and drawing style of the source sketch, so every in-between frame is a complete drawing rather than a blend of the two keyframes.`
+  }
+
+  const heading = clip.endDescription?.trim()
+
+  return `[KEYFRAME TRANSITION]: One continuous, unbroken take lasting ${CLIP_SECONDS} seconds. Begin exactly at the supplied Start Frame and animate forward from it, keeping the same subject, drawing style, line weight and framing throughout.${motion}
+
+DIRECTION OF TRAVEL${
+    heading ? `: the action is heading toward this state — ${heading}` : ''
+  }. Treat that strictly as a heading, NOT as a frame to reproduce. Do not compose, hold, settle into, cut to, or fade toward any specific target image. There is no required final pose.
+
+The clip simply runs out while the action is still underway. Ending mid-motion is correct and preferred: the last frame must look like an ordinary frame of the movement, indistinguishable in character from the frames just before it. Never end on a freeze frame, a held pose, a fade, a crossfade, a dissolve or a slow-down into stillness.
+
+Motion must be monotonic and continuous at a natural, even speed: the subject advances in one direction and never drifts backwards, reverses, overshoots and returns, stalls, loops, re-times or regresses toward the opening pose. Do not rush through the action early and then wait out the remaining time.
+
+Where features or anatomical structures are missing or ambiguous, draw them in using the exact stroke weight and drawing style of the source sketch, so every frame is a complete drawing rather than a blend or a smear.`
+}
+
+export function compilePrompt(
+  clip: Clip,
+  styleNote: string,
+  mode: EndFrameMode = 'guide'
+): string | null {
   if (!isBoardComplete(clip.board)) return null
 
   const [director, cinematographer, animator, artDirector] = BOARD_STEPS.map((s) =>
     stepDirective(clip.board, s)
   )
 
-  const style = styleNote.trim() || DEFAULT_STYLE_NOTE
+  // Trailing punctuation is stripped because this is spliced into a sentence -
+  // a note ending in "." would otherwise produce "..".
+  const style = (styleNote.trim() || DEFAULT_STYLE_NOTE).replace(/[.\s]+$/, '')
   const intent = clip.intent.trim()
 
   const lines = [
-    `[ART STYLE & INTEGRITY]: Strictly retain 2D hand-drawn ${style}. Preserve the exact stroke weight, line quality, medium and colour palette present in the Start and End frames. Clean background, strict stroke fidelity, zero 3D, zero photorealism, no relighting, no shading passes, no gradients.`,
+    `[ART STYLE & INTEGRITY]: Strictly retain the hand-drawn 2D look of the source frames. Art direction: ${style}. Preserve the exact stroke weight, line quality, medium and colour palette present in the Start and End frames. Clean background, strict stroke fidelity, zero 3D, zero photorealism, no relighting, no shading passes, no gradients.`,
 
-    `[KEYFRAME TRANSITION]: Transition smoothly from the Start Frame (Image A pose/state) to the End Frame (Image B pose/state) over ${CLIP_SECONDS} seconds. The first frame must match Image A exactly and the final frame must match Image B exactly.${
-      intent ? ` Motion intent: ${intent}.` : ''
-    } Where intermediate features or anatomical structures are missing between the keyframes, draw them in using the exact stroke weight and drawing style of the source sketch.`,
+    transitionSection(clip, intent, mode),
 
     `[EASING & MOTION]: ${director} ${cinematographer} ${animator}`.replace(/\s+/g, ' ').trim(),
 
@@ -85,11 +130,6 @@ export function compilePrompt(clip: Clip, styleNote: string): string | null {
   ]
 
   return lines.join('\n\n')
-}
-
-/** Which prompt actually goes to the video model. */
-export function activePrompt(clip: Clip): string | undefined {
-  return clip.useRevised && clip.revisedPrompt ? clip.revisedPrompt : clip.prompt
 }
 
 /**

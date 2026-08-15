@@ -1427,3 +1427,18 @@ body {
   background: rgba(28, 27, 26, 0.07);
   border-radius: 999px;
 }
+
+.end-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 13px;
+  background: rgba(28, 27, 26, 0.035);
+  border-radius: 11px;
+}
+.end-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}

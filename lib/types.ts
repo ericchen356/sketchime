@@ -138,6 +138,21 @@ export type BoardThreads = Partial<Record<BoardStepId, BoardThread>>
  * stuck, and the user should not be trapped answering forever. */
 export const MAX_TURNS_PER_AGENT = 4
 
+/**
+ * How the End Frame is used.
+ *
+ *  - 'guide': the end frame steers the action but is NOT handed to the video
+ *    model as a terminal frame. Veo's `lastFrame` is a hard constraint - it must
+ *    land on that exact image - so when its natural motion diverges from the
+ *    target it reconciles by snapping, regressing or fading. Dropping the
+ *    constraint removes the reconciliation, at the cost of not finishing on a
+ *    known frame.
+ *  - 'exact': `lastFrame` is supplied, giving true keyframe interpolation.
+ *    Required wherever clips are chained, because clip N's last frame has to BE
+ *    clip N+1's first frame or the cut becomes visible.
+ */
+export type EndFrameMode = 'guide' | 'exact'
+
 export type ClipStatus = 'draft' | 'ready' | 'generating' | 'done' | 'error'
 
 export interface Clip {
@@ -148,6 +163,15 @@ export interface Clip {
   endFrameId: string
   /** The user's motion intent, in their own words. */
   intent: string
+  /** Explicit override. Left undefined, the mode is derived from whether this
+   * clip's end frame is shared with the next clip (see effectiveEndMode). */
+  endFrameMode?: EndFrameMode
+  /**
+   * Prose description of the end frame, written by a vision model. In 'guide'
+   * mode the video model never receives Image B, so this is the only route by
+   * which the intended destination reaches it at all.
+   */
+  endDescription?: string
   board: BoardThreads
   /** Stage 2 output. Recompiled whenever an input changes. */
   prompt?: string

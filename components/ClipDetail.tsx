@@ -2,13 +2,24 @@
 
 import { useState } from 'react'
 import { BOARD_STEPS } from '@/lib/board'
-import { activePrompt, answeredCount, isBoardComplete, isStepDone } from '@/lib/compile'
-import { CLIP_SECONDS, type Clip, type Storyboard } from '@/lib/types'
+import { answeredCount, isBoardComplete, isStepDone } from '@/lib/compile'
+import { CLIP_SECONDS, type Clip, type EndFrameMode, type Storyboard } from '@/lib/types'
 import { getSketch } from '@/lib/storyboard'
 import { isEmpty } from '@/lib/ink'
 
 interface Props {
   clip: Clip
+  /**
+   * Freshly compiled prompt for this clip, recomputed by the owner on every
+   * render. The clip also caches a copy, but a cache goes stale the moment the
+   * compiler changes - and then the panel shows one thing while generation
+   * sends another. This is the authoritative text.
+   */
+  compiled: string | null
+  /** How this clip's end frame is used, and why. */
+  endMode: EndFrameMode
+  endModeReason: string
+  onEndMode(mode: EndFrameMode | undefined): void
   index: number
   storyboard: Storyboard
   busy: boolean
@@ -23,6 +34,10 @@ interface Props {
 
 export function ClipDetail({
   clip,
+  compiled,
+  endMode,
+  endModeReason,
+  onEndMode,
   index,
   storyboard,
   busy,
@@ -38,7 +53,10 @@ export function ClipDetail({
   const [copied, setCopied] = useState(false)
 
   const complete = isBoardComplete(clip.board)
-  const prompt = activePrompt(clip)
+  // A revision was written against whatever the prompt said at the time; if the
+  // compiled text has moved since, the revision no longer matches it.
+  const revisionStale = !!clip.revisedPrompt && clip.prompt !== compiled
+  const prompt = clip.useRevised && clip.revisedPrompt && !revisionStale ? clip.revisedPrompt : compiled
   const startBlank = isEmpty(getSketch(storyboard, clip.startFrameId))
   const endBlank = isEmpty(getSketch(storyboard, clip.endFrameId))
 
@@ -112,12 +130,12 @@ export function ClipDetail({
         </ul>
       </div>
 
-      {clip.prompt ? (
+      {compiled ? (
         <div className="prompt-block">
           <div className="prompt-head">
             <span className="field-label">Compiled prompt</span>
             <div className="prompt-actions">
-              {clip.revisedPrompt && (
+              {clip.revisedPrompt && !revisionStale && (
                 <div className="toggle-group">
                   <button
                     className={`chip ${!clip.useRevised ? 'chip-on' : ''}`}
@@ -138,6 +156,12 @@ export function ClipDetail({
               </button>
             </div>
           </div>
+          {revisionStale && (
+            <p className="hint-note">
+              The earlier Gemini revision was written against an older version of this prompt, so
+              it&apos;s been set aside. Revise again if you want one.
+            </p>
+          )}
           <pre className="prompt-text">{prompt}</pre>
 
           <div className="revise-row">
@@ -159,6 +183,39 @@ export function ClipDetail({
       )}
 
       {clip.error && <p className="error-note">{clip.error}</p>}
+
+      <div className="end-mode">
+        <div className="end-mode-head">
+          <span className="field-label">End frame</span>
+          <div className="toggle-group">
+            <button
+              className={`chip ${endMode === 'guide' ? 'chip-on' : ''}`}
+              onClick={() => onEndMode(clip.endFrameMode === 'guide' ? undefined : 'guide')}
+              title="The end frame steers the action but is not sent to the video model. No settle or fade at the end; the clip finishes mid-motion."
+            >
+              guide
+            </button>
+            <button
+              className={`chip ${endMode === 'exact' ? 'chip-on' : ''}`}
+              onClick={() => onEndMode(clip.endFrameMode === 'exact' ? undefined : 'exact')}
+              title="The end frame is pinned as the literal last frame. Needed for seamless chaining, but can settle or fade."
+            >
+              exact
+            </button>
+          </div>
+        </div>
+        <p className="hint-note">
+          {endMode === 'exact'
+            ? `Pinned as the literal last frame — ${endModeReason}. Guarantees the next clip starts where this one ends, at the cost of a possible settle onto that image.`
+            : `Used as direction only — ${endModeReason}. The clip ends mid-motion, which avoids the fade onto a fixed final image.`}
+          {clip.endFrameMode && ' Click the active option again to go back to automatic.'}
+        </p>
+        {endMode === 'guide' && clip.endDescription && (
+          <p className="hint-note">
+            <b>Heading:</b> {clip.endDescription}
+          </p>
+        )}
+      </div>
 
       <div className="generate-row">
         {clip.status === 'generating' ? (
