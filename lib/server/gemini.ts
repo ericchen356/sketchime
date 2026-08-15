@@ -9,18 +9,64 @@
  * is strictly preferred so a deployed instance can hide the key entirely.
  */
 
-const BASE = 'https://generativelanguage.googleapis.com/v1beta'
-
-/** Text model, used for the prompt-revision pass. */
-export const TEXT_MODEL = process.env.GEMINI_TEXT_MODEL ?? 'gemini-2.5-flash'
+/** Overridable so the retry/failover behaviour can be exercised against a fake
+ * endpoint. Never point this anywhere untrusted - the API key goes with it. */
+const BASE = process.env.GEMINI_API_BASE?.trim() || 'https://generativelanguage.googleapis.com/v1beta'
 
 /**
- * Video model. Keyframe interpolation (a start image AND an end image) is a Veo
- * 3.1 feature - earlier Veo models accept only a single start image and will
- * reject or ignore `lastFrame`. Override with GEMINI_VIDEO_MODEL if Google
- * renames the preview.
+ * Preferred text models, best first. This is a PREFERENCE list, not a hardcoded
+ * choice: what a given key may actually call is discovered at runtime (see
+ * resolveTextModel) and the first entry the key can see wins.
+ *
+ * Hardcoding one id does not survive contact with reality - Google retires
+ * models and, worse, closes older ones to NEW keys while existing keys keep
+ * working, so the same id succeeds for one user and 404s for another.
  */
-export const VIDEO_MODEL = process.env.GEMINI_VIDEO_MODEL ?? 'veo-3.1-generate-preview'
+const TEXT_MODEL_PREFERENCE = [
+  // 3.1 Flash-Lite first by request. Note there is no plain `gemini-3.1-flash`
+  // text model - the 3.1 line ships Flash-Lite for text/vision, and its other
+  // Flash variants are live-audio, TTS and image generation.
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-pro'
+]
+
+/**
+ * Preferred video models. Keyframe interpolation (a start image AND an end
+ * image) is a Veo 3.1 feature - earlier Veo models accept only a single start
+ * image and will reject or ignore `lastFrame`, so the fallbacks stay on 3.1+.
+ *
+ * CHEAPEST FIRST, deliberately. At 5 seconds a clip these cost roughly $0.25
+ * (lite), $0.50 (fast) and $2.00 (standard) at 720p, and the premium tiers
+ * mostly buy photorealism and cinematic detail - exactly what this pipeline's
+ * prompt forbids. Defaulting to standard would charge 8x for capability the
+ * [AVOID] line then suppresses. Override with GEMINI_VIDEO_MODEL for a
+ * deliberately expensive final render.
+ */
+const VIDEO_MODEL_PREFERENCE = [
+  // Omni Flash first, by request, for testing. It is a DIFFERENT API surface
+  // (Interactions, synchronous) and takes only ONE image - so it cannot pin a
+  // last frame at all. That suits guide mode and rules it out for chained
+  // seams; see startVideo, which branches on the model id.
+  'gemini-omni-flash-preview',
+  'veo-3.1-lite-generate-preview',
+  'veo-3.1-fast-generate-preview',
+  'veo-3.1-generate-preview'
+]
+
+/** An explicit env override is honoured verbatim and skips discovery entirely -
+ * if you name a model, you get that model, including its errors. */
+export const TEXT_MODEL_OVERRIDE = process.env.GEMINI_TEXT_MODEL?.trim() || null
+export const VIDEO_MODEL_OVERRIDE = process.env.GEMINI_VIDEO_MODEL?.trim() || null
+
+/** What to show in the UI before any key has been used to discover the truth. */
+export const TEXT_MODEL = TEXT_MODEL_OVERRIDE ?? TEXT_MODEL_PREFERENCE[0]
+export const VIDEO_MODEL = VIDEO_MODEL_OVERRIDE ?? VIDEO_MODEL_PREFERENCE[0]
 
 export class GeminiError extends Error {
   status: number
@@ -30,13 +76,21 @@ export class GeminiError extends Error {
   }
 }
 
-/** Env var wins over a user-supplied key, so a hosted deployment can keep the
- * key entirely server-side. */
+/**
+ * A key typed into settings WINS over the env var.
+ *
+ * The reverse (env-first) seems safer but is actively hostile: a stale key left
+ * in .env.local silently shadows the one the user just pasted, and every
+ * request keeps failing with an auth error against a key they cannot see and
+ * did not choose. Explicit beats ambient - if someone takes the trouble to
+ * enter a key, that is the key they mean. The env var remains the default for
+ * deployments, where nobody types anything.
+ */
 export function resolveKey(userKey?: string): string {
-  const key = process.env.GEMINI_API_KEY || userKey?.trim()
+  const key = userKey?.trim() || process.env.GEMINI_API_KEY
   if (!key) {
     throw new GeminiError(
-      'No Gemini API key. Set GEMINI_API_KEY in .env.local, or enter a key in the app settings.',
+      'No Gemini API key. Enter one in Settings, or set GEMINI_API_KEY in .env.local.',
       401
     )
   }
@@ -47,20 +101,89 @@ export function hasServerKey(): boolean {
   return !!process.env.GEMINI_API_KEY
 }
 
-async function call(
+/**
+ * Overloaded or flaky upstream: worth retrying, and worth trying a DIFFERENT
+ * model, because saturation is per-model.
+ */
+export function isOverloaded(e: unknown): boolean {
+  return e instanceof GeminiError && [500, 503, 504].includes(e.status)
+}
+
+/**
+ * Rate limited / out of quota. Deliberately NOT treated like overload: quota is
+ * billed per project, not per model, so retrying and failing over just burns
+ * time and quota to arrive at the same answer. Veo in particular is commonly
+ * unavailable on a free-tier key, and telling someone "everything is busy" when
+ * they actually have no quota sends them to wait for a spike that will never
+ * pass.
+ */
+export function isRateLimited(e: unknown): boolean {
+  return e instanceof GeminiError && e.status === 429
+}
+
+export function isTransient(e: unknown): boolean {
+  return isOverloaded(e)
+}
+
+/** Backoff between retries of the SAME model. Kept short because a person is
+ * waiting on the other end of this; persistent overload fails over to a
+ * different model instead (see withModel). */
+const RETRY_DELAYS_MS = [1200, 3500]
+
+/**
+ * Per-attempt ceiling. node's fetch has NO default timeout, so a stalled
+ * connection hangs forever: the request never completes, nothing appears in the
+ * log, and the UI spins with no error. A board turn ships two PNGs, which is
+ * exactly the kind of request that stalls. A definite failure beats an
+ * indefinite wait - and a timeout is transient, so it retries and fails over
+ * like any other blip.
+ */
+const REQUEST_TIMEOUT_MS = 30_000
+
+/**
+ * Board turns specifically. A healthy turn is 2-3s, so 20s is ~7x headroom and
+ * still recovers fast when Google's backend hits a long tail.
+ *
+ * Ruled out as causes first: socket reuse (idle connections to this host answer
+ * in <250ms even after 80s), and payload size (two sketch PNGs are ~1k image
+ * tokens). What is left is upstream variance, and the honest response to that
+ * is to give up quickly and retry rather than wait indefinitely.
+ */
+const BOARD_TIMEOUT_MS = 20_000
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+async function callOnce(
   path: string,
   key: string,
-  init?: { method?: string; body?: unknown }
+  init?: { method?: string; body?: unknown; timeoutMs?: number }
 ): Promise<unknown> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: init?.method ?? 'GET',
-    headers: {
-      'x-goog-api-key': key,
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {})
-    },
-    body: init?.body ? JSON.stringify(init.body) : undefined,
-    cache: 'no-store'
-  })
+  const timeout = init?.timeoutMs ?? REQUEST_TIMEOUT_MS
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: init?.method ?? 'GET',
+      headers: {
+        'x-goog-api-key': key,
+        ...(init?.body ? { 'Content-Type': 'application/json' } : {})
+      },
+      body: init?.body ? JSON.stringify(init.body) : undefined,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(timeout)
+    })
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    console.warn(
+      `[gemini] ${timedOut ? 'TIMEOUT' : 'NETWORK'} ${path.split('?')[0]} after ${timeout}ms`
+    )
+    // 504 so it counts as transient: worth one retry, then a different model.
+    throw new GeminiError(
+      timedOut
+        ? `Gemini did not respond within ${timeout / 1000}s.`
+        : `Could not reach Gemini: ${e instanceof Error ? e.message : 'network error'}`,
+      timedOut ? 504 : 502
+    )
+  }
 
   const text = await res.text()
   let json: unknown
@@ -76,21 +199,290 @@ async function call(
       (json as { error?: { message?: string } })?.error?.message ||
       (typeof json === 'object' && json && 'raw' in json ? String((json as { raw: string }).raw) : '') ||
       res.statusText
+    // Logged as well as thrown: when a request fails over across models the
+    // caller only sees the summary, and the individual reasons are what
+    // actually explain it.
+    console.warn(`[gemini] ${res.status} ${path.split('?')[0]} — ${String(msg).slice(0, 300)}`)
     throw new GeminiError(`Gemini ${res.status}: ${msg}`.slice(0, 600), res.status)
   }
   return json
 }
 
+/**
+ * Every request goes through here. Transient failures - the "this model is
+ * currently experiencing high demand" 503 in particular - are retried with
+ * backoff rather than thrown at the user, because they usually clear in
+ * seconds. Anything the caller can act on (bad key, bad request) fails
+ * immediately.
+ */
+async function call(
+  path: string,
+  key: string,
+  init?: { method?: string; body?: unknown; timeoutMs?: number }
+): Promise<unknown> {
+  let last: unknown
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await callOnce(path, key, init)
+    } catch (e) {
+      last = e
+      if (!isTransient(e) || attempt === RETRY_DELAYS_MS.length) throw e
+      await sleep(RETRY_DELAYS_MS[attempt])
+    }
+  }
+  throw last
+}
+
+/* ---------- model discovery ---------- */
+
+interface ListedModel {
+  name: string
+  supportedGenerationMethods?: string[]
+}
+
+/** Cached per key, for the life of the process. Discovery costs a round trip
+ * and the answer does not change mid-session. Keyed by a short fingerprint so
+ * the raw key is never used as a map key. */
+const modelCache = new Map<string, { text?: string[]; video?: string[] }>()
+
+const fingerprint = (key: string): string => `${key.slice(0, 6)}:${key.length}`
+
+async function listModels(key: string): Promise<ListedModel[]> {
+  const out: ListedModel[] = []
+  let pageToken = ''
+
+  // A key with many tuned models can page; two pages is plenty to find a base
+  // model, and bounds the work if the token ever fails to advance.
+  for (let page = 0; page < 3; page++) {
+    const json = (await call(
+      `/models?pageSize=200${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`,
+      key
+    )) as { models?: ListedModel[]; nextPageToken?: string }
+
+    out.push(...(json.models ?? []))
+    if (!json.nextPageToken) break
+    pageToken = json.nextPageToken
+  }
+  return out
+}
+
+/** "models/gemini-3.7-flash" -> "gemini-3.7-flash" */
+const bare = (name: string): string => name.replace(/^models\//, '')
+
+/**
+ * Pick the best model this key can actually call.
+ *
+ * Preference order first; if none of the preferred ids are visible, fall back to
+ * ANY model the key can see that supports the required method and isn't an
+ * obvious special-purpose variant. That last step is what keeps the app working
+ * through a rename nobody told us about.
+ */
+async function resolve(
+  key: string,
+  kind: 'text' | 'video',
+  preference: string[],
+  method: string,
+  match: RegExp,
+  /** Strict callers need "confirmed" to MEAN confirmed, so a failed lookup
+   * throws instead of quietly falling back. The settings check uses this; the
+   * generation paths do not, so a transient blip doesn't block real work. */
+  strict = false
+): Promise<string[]> {
+  const fp = fingerprint(key)
+  const cached = modelCache.get(fp)?.[kind]
+  if (cached?.length) return cached
+
+  let available: ListedModel[]
+  try {
+    available = await listModels(key)
+  } catch (e) {
+    // A rejected key or a disabled API is the user's problem to fix and must
+    // surface - falling back here would report a working model for a key that
+    // cannot call anything. Only transient failures fall through.
+    const status = e instanceof GeminiError ? e.status : 0
+    if (strict || status === 400 || status === 401 || status === 403) throw e
+    return preference
+  }
+
+  const usable = new Map<string, ListedModel>()
+  for (const m of available) {
+    if (!m.name) continue
+    // Veo is not a generateContent model, so only filter on the method when the
+    // API actually reports methods for that entry.
+    const methods = m.supportedGenerationMethods
+    if (methods && methods.length > 0 && !methods.includes(method)) continue
+    usable.set(bare(m.name), m)
+  }
+
+  // The full ORDERED candidate list, not just a winner: an overloaded model
+  // needs somewhere to fail over to, and re-deriving that per request would
+  // mean re-listing models on every 503.
+  const preferred = preference.filter((p) => usable.has(p))
+
+  // Anything else the key can see that fits, newest-looking first, preferring
+  // plain names over -lite / -preview / dated variants. This is what keeps the
+  // app alive through a rename nobody announced.
+  const discovered = [...usable.keys()]
+    .filter((n) => match.test(n) && !preferred.includes(n))
+    .sort((a, b) => {
+      const score = (n: string): number =>
+        (/-(lite|preview|exp|thinking)\b/.test(n) ? 1 : 0) + (/\d{3,}/.test(n) ? 1 : 0)
+      return score(a) - score(b) || b.localeCompare(a)
+    })
+
+  const chosen = [...preferred, ...discovered]
+
+  if (chosen.length === 0) {
+    throw new GeminiError(
+      `This API key cannot access any ${kind} model. Available: ${[...usable.keys()]
+        .slice(0, 12)
+        .join(', ') || '(none)'}`,
+      403
+    )
+  }
+
+  modelCache.set(fp, { ...modelCache.get(fp), [kind]: chosen })
+  return chosen
+}
+
+/** Ordered fallbacks, best first. An override collapses this to one entry. */
+export function textCandidates(key: string, strict = false): Promise<string[]> {
+  if (TEXT_MODEL_OVERRIDE) return Promise.resolve([TEXT_MODEL_OVERRIDE])
+  return resolve(
+    key,
+    'text',
+    TEXT_MODEL_PREFERENCE,
+    'generateContent',
+    /^gemini-[\d.]+-(flash|pro)/,
+    strict
+  )
+}
+
+export function videoCandidates(key: string, strict = false): Promise<string[]> {
+  if (VIDEO_MODEL_OVERRIDE) return Promise.resolve([VIDEO_MODEL_OVERRIDE])
+  return resolve(key, 'video', VIDEO_MODEL_PREFERENCE, 'predictLongRunning', /^veo-/, strict)
+}
+
+export async function resolveTextModel(key: string, strict = false): Promise<string> {
+  return (await textCandidates(key, strict))[0]
+}
+
+export async function resolveVideoModel(key: string, strict = false): Promise<string> {
+  return (await videoCandidates(key, strict))[0]
+}
+
+/** A model that vanished mid-session invalidates the cache so the next call
+ * re-discovers instead of failing forever. */
+function forgetModel(key: string, kind: 'text' | 'video'): void {
+  const fp = fingerprint(key)
+  const entry = modelCache.get(fp)
+  if (entry) modelCache.set(fp, { ...entry, [kind]: undefined })
+}
+
+/** True for the "this model is gone / not available to you" family of errors. */
+function isModelGone(e: unknown): boolean {
+  return (
+    e instanceof GeminiError &&
+    (e.status === 404 || e.status === 403) &&
+    /model|not (available|found|supported)/i.test(e.message)
+  )
+}
+
+/**
+ * Run a call against the best available model, walking down the candidate list
+ * when one is unusable.
+ *
+ * Two distinct failures both land here:
+ *  - the model is GONE (404/403). The cache is dropped so the next request
+ *    re-discovers rather than failing forever.
+ *  - the model is OVERLOADED (503) and stayed overloaded through the retries in
+ *    `call`. Another model is very unlikely to be saturated at the same moment,
+ *    so moving down the list beats making the user wait and try again.
+ *
+ * An explicit env override collapses the list to one entry: naming a model
+ * means you get that model, including its errors.
+ */
+async function withModel<T>(
+  key: string,
+  kind: 'text' | 'video',
+  run: (model: string) => Promise<T>
+): Promise<T> {
+  /**
+   * Video candidates are ordered CHEAPEST FIRST, so failing over walks UP in
+   * price - a $0.25 render silently becoming a $2.00 one because the cheap
+   * model was briefly busy is a surprise bill, not resilience. So overload does
+   * not escalate for video; the user is told to retry or pick a tier
+   * deliberately. Text models are within rounding error of each other, so they
+   * fail over freely.
+   */
+  const escalateOnOverload = kind === 'text'
+  const candidates = kind === 'text' ? await textCandidates(key) : await videoCandidates(key)
+  let last: unknown
+
+  const tried: string[] = []
+
+  for (const model of candidates) {
+    tried.push(model)
+    try {
+      return await run(model)
+    } catch (e) {
+      last = e
+
+      // Quota is a project-level fact; another model does not have more of it.
+      // Retrying or failing over just burns time to reach the same answer.
+      if (isRateLimited(e)) throw e
+
+      if (isModelGone(e)) {
+        // A retired model leaves no choice but to move on, even for video.
+        forgetModel(key, kind)
+        console.warn(`[gemini] ${model} unavailable for ${kind}; trying the next candidate`)
+        continue
+      }
+
+      if (isOverloaded(e)) {
+        if (escalateOnOverload) continue
+        // Video candidates are ordered cheapest-first, so "the next model" is a
+        // pricier one. Silently turning a $0.25 render into a $2.00 one because
+        // the cheap tier was briefly busy is a surprise bill, not resilience.
+        throw new GeminiError(
+          `${model} is busy. Not falling back to a pricier tier automatically — retry shortly, or set GEMINI_VIDEO_MODEL to pick one deliberately. (${
+            e instanceof Error ? e.message : 'overloaded'
+          })`,
+          503
+        )
+      }
+
+      throw e
+    }
+  }
+
+  if (isOverloaded(last) || last === undefined) {
+    // Keep the upstream wording. A generic "everything is busy" hides whether
+    // this was overload, quota, or something else - which is exactly what makes
+    // a failure undiagnosable from the outside.
+    const detail = last instanceof Error ? last.message : 'no response'
+    throw new GeminiError(
+      `No ${kind} model would serve this request (tried ${tried.length}: ${tried.join(
+        ', '
+      )}). Last error — ${detail}`,
+      503
+    )
+  }
+  throw last
+}
+
 /* ---------- text: prompt revision ---------- */
 
 export async function reviseText(instruction: string, key: string): Promise<string> {
-  const json = (await call(`/models/${TEXT_MODEL}:generateContent`, key, {
-    method: 'POST',
-    body: {
-      contents: [{ role: 'user', parts: [{ text: instruction }] }],
-      generationConfig: { temperature: 0.4 }
-    }
-  })) as {
+  const json = (await withModel(key, 'text', (model) =>
+    call(`/models/${model}:generateContent`, key, {
+      method: 'POST',
+      body: {
+        contents: [{ role: 'user', parts: [{ text: instruction }] }],
+        generationConfig: { temperature: 0.4 }
+      }
+    })
+  )) as {
     candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[]
     promptFeedback?: { blockReason?: string }
   }
@@ -196,33 +588,42 @@ HOW TO WORK:
 
 Answer as JSON matching the schema. When satisfied=true, omit question and options. When satisfied=false, omit directive.`
 
-  const json = (await call(`/models/${TEXT_MODEL}:generateContent`, key, {
-    method: 'POST',
-    body: {
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { text: 'IMAGE 1 — START frame (Image A):' },
-            { inlineData: { mimeType: 'image/png', data: req.imageA } },
-            { text: 'IMAGE 2 — END frame (Image B):' },
-            { inlineData: { mimeType: 'image/png', data: req.imageB } },
-            {
-              text: req.history.length
-                ? 'Given the answers above, either ask your next question or commit to your directive.'
-                : 'Study both frames, then ask your first question.'
-            }
-          ]
+  const json = (await withModel(key, 'text', (model) =>
+    call(`/models/${model}:generateContent`, key, {
+      method: 'POST',
+      body: {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: 'IMAGE 1 — START frame (Image A):' },
+              { inlineData: { mimeType: 'image/png', data: req.imageA } },
+              { text: 'IMAGE 2 — END frame (Image B):' },
+              { inlineData: { mimeType: 'image/png', data: req.imageB } },
+              {
+                text: req.history.length
+                  ? 'Given the answers above, either ask your next question or commit to your directive.'
+                  : 'Study both frames, then ask your first question.'
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.6,
+          responseMimeType: 'application/json',
+          responseSchema: BOARD_SCHEMA
+          // No thinking_level here on purpose. It was tried and rejected with
+          // `Unknown name "thinking_level"` on this endpoint, and it bought
+          // nothing anyway: gemini-3.1-flash-lite already defaults to minimal
+          // thinking. Do not re-add a generationConfig field without checking it
+          // against the live API first - an unknown field fails the WHOLE
+          // request, so a speculative addition breaks a working path outright.
         }
-      ],
-      generationConfig: {
-        temperature: 0.6,
-        responseMimeType: 'application/json',
-        responseSchema: BOARD_SCHEMA
-      }
-    }
-  })) as {
+      },
+      timeoutMs: BOARD_TIMEOUT_MS
+    })
+  )) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[]
     promptFeedback?: { blockReason?: string }
   }

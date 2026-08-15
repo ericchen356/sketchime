@@ -29,6 +29,11 @@ export interface ServerConfig {
   hasServerKey: boolean
   textModel: string
   videoModel: string
+  /** False = these are just the preferred defaults; true = confirmed against
+   * the key by asking Google what it can actually call. */
+  resolved: boolean
+  textOverridden?: boolean
+  videoOverridden?: boolean
 }
 
 export async function fetchConfig(): Promise<ServerConfig> {
@@ -37,16 +42,40 @@ export async function fetchConfig(): Promise<ServerConfig> {
   return (await res.json()) as ServerConfig
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  })
+/** Ask which models this key can really use. Model ids get retired, and older
+ * ones get closed to new keys while still working for existing ones, so the
+ * answer differs per key and is worth checking rather than assuming. */
+export async function resolveModels(apiKey: string): Promise<ServerConfig> {
+  return postJson<ServerConfig>('/api/config', { apiKey })
+}
+
+async function postJson<T>(url: string, body: unknown, timeoutMs?: number): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      // Without this a stalled request spins the UI forever with no error and
+      // nothing to click. Better a definite failure than an indefinite wait.
+      signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined
+    })
+  } catch (e) {
+    const timedOut = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')
+    throw new Error(
+      timedOut
+        ? `No response after ${Math.round((timeoutMs ?? 0) / 1000)}s. The model may be busy — try again.`
+        : 'Could not reach the server.'
+    )
+  }
   const json = (await res.json().catch(() => ({}))) as T & { error?: string }
   if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`)
   return json
 }
+
+/** A board turn sends two PNGs and waits on a vision model; generous, but
+ * finite. */
+const BOARD_TIMEOUT_MS = 75_000
 
 export async function revisePrompt(instruction: string, apiKey: string): Promise<string> {
   const { revised } = await postJson<{ revised: string }>('/api/revise', { instruction, apiKey })

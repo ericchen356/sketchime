@@ -394,6 +394,7 @@ export function Studio(): React.JSX.Element {
             saveApiKey(k)
           }}
           onStyleNote={handleStyleNote}
+          onConfig={setConfig}
           onClose={() => setSettingsOpen(false)}
         />
       )}

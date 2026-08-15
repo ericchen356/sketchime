@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { ServerConfig } from '@/lib/gemini-client'
+import { resolveModels, type ServerConfig } from '@/lib/gemini-client'
 
 interface Props {
   apiKey: string
@@ -9,6 +9,7 @@ interface Props {
   styleNote: string
   onApiKey(key: string): void
   onStyleNote(note: string): void
+  onConfig(config: ServerConfig): void
   onClose(): void
 }
 
@@ -18,10 +19,28 @@ export function SettingsDialog({
   styleNote,
   onApiKey,
   onStyleNote,
+  onConfig,
   onClose
 }: Props): React.JSX.Element {
   const [draft, setDraft] = useState(apiKey)
   const [reveal, setReveal] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [checkError, setCheckError] = useState<string | null>(null)
+
+  /** Save, then immediately ask Google which models this key can call - a bad
+   * key or a retired model shows up here rather than mid-way through a board. */
+  const saveAndCheck = async (): Promise<void> => {
+    onApiKey(draft)
+    setChecking(true)
+    setCheckError(null)
+    try {
+      onConfig(await resolveModels(draft))
+    } catch (e) {
+      setCheckError(e instanceof Error ? e.message : 'Could not verify the key.')
+    } finally {
+      setChecking(false)
+    }
+  }
 
   return (
     <div className="modal-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -37,8 +56,9 @@ export function SettingsDialog({
           <span className="field-label">Gemini API key</span>
           {config?.hasServerKey ? (
             <p className="hint-note">
-              A key is already configured on the server (<code>GEMINI_API_KEY</code>), and it takes
-              precedence. You don&apos;t need to enter anything here.
+              A key is configured on the server (<code>GEMINI_API_KEY</code>) and is used by
+              default. Anything you enter here <b>overrides</b> it for this tab — useful when the
+              server&apos;s key is stale or out of quota.
             </p>
           ) : (
             <p className="hint-note">
@@ -62,12 +82,10 @@ export function SettingsDialog({
             </button>
             <button
               className="btn btn-small btn-primary"
-              onClick={() => {
-                onApiKey(draft)
-                onClose()
-              }}
+              onClick={() => void saveAndCheck()}
+              disabled={checking}
             >
-              Save
+              {checking ? 'Checking…' : 'Save & check'}
             </button>
           </div>
         </label>
@@ -87,10 +105,26 @@ export function SettingsDialog({
           />
         </label>
 
+        {checkError && <p className="error-note">{checkError}</p>}
+
         {config && (
           <p className="hint-note">
-            Models — text: <code>{config.textModel}</code>, video: <code>{config.videoModel}</code>.
-            Override with <code>GEMINI_TEXT_MODEL</code> / <code>GEMINI_VIDEO_MODEL</code>.
+            {config.resolved ? (
+              <>
+                <b>Confirmed for this key</b> — text: <code>{config.textModel}</code>
+                {config.textOverridden && ' (env override)'}, video:{' '}
+                <code>{config.videoModel}</code>
+                {config.videoOverridden && ' (env override)'}.
+              </>
+            ) : (
+              <>
+                Preferred models — text: <code>{config.textModel}</code>, video:{' '}
+                <code>{config.videoModel}</code>. Save a key to confirm what it can actually call;
+                the app picks the best available automatically.
+              </>
+            )}{' '}
+            Force a specific one with <code>GEMINI_TEXT_MODEL</code> /{' '}
+            <code>GEMINI_VIDEO_MODEL</code>.
           </p>
         )}
       </div>
