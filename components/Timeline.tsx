@@ -129,7 +129,7 @@ export function Timeline({
                       }}
                       title="Draw the start keyframe (Image A)"
                     >
-                      <FrameThumb sketch={start} box={box} label="A" width={132} height={74} />
+                      <FrameThumb sketch={start} box={box} label="A" width={122} height={68} />
                     </button>
                     {/* The arrow doubles as the duplicate control: the common
                         move is "B starts as a copy of A, then something moves". */}
@@ -153,7 +153,7 @@ export function Timeline({
                       }}
                       title="Draw the end keyframe (Image B)"
                     >
-                      <FrameThumb sketch={end} box={box} label="B" width={132} height={74} />
+                      <FrameThumb sketch={end} box={box} label="B" width={122} height={68} />
                     </button>
                   </div>
 

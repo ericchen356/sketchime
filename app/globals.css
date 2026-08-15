@@ -749,10 +749,15 @@ body {
 .clip-frames {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
+  /* Two 122px thumbs + two 6px gaps + the 24px arrow = 280px, inside the
+     card's 284px content box. Without this the B thumb hangs over the edge. */
+  min-width: 0;
 }
 
 .frame-btn {
+  flex: none;
   padding: 0;
   background: transparent;
   border: none;
@@ -1450,14 +1455,16 @@ body {
   border-radius: 999px;
 }
 
-
 /* The A→B arrow is also the duplicate button. */
 .frame-arrow {
+  position: relative;
   display: flex;
+  flex: none;
   flex-direction: column;
   align-items: center;
-  gap: 1px;
-  padding: 6px 3px;
+  justify-content: center;
+  width: 24px;
+  padding: 6px 0;
   font: inherit;
   font-size: 15px;
   color: var(--muted);
@@ -1475,7 +1482,15 @@ body {
   opacity: 0.35;
   cursor: default;
 }
+/* Absolute so the hover label never widens the arrow column — laid out inline
+   it stole ~30px from the thumbs and pushed frame B outside the card. */
 .frame-arrow-label {
+  position: absolute;
+  top: calc(100% - 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  white-space: nowrap;
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.04em;
