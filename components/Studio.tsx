@@ -7,7 +7,7 @@ import { BoardSurvey } from './BoardSurvey'
 import { ClipDetail } from './ClipDetail'
 import { SettingsDialog } from './SettingsDialog'
 import { compilePrompt, revisionInstruction } from '@/lib/compile'
-import { renderClipFrames } from '@/lib/render'
+import { BOARD_H, BOARD_W, renderClipFrames } from '@/lib/render'
 import {
   fetchConfig,
   generateClip,
@@ -170,9 +170,13 @@ export function Studio(): React.JSX.Element {
     const sb = storyboardRef.current
     const clip = sb.clips.find((c) => c.id === clipId)
     if (!clip) return
+    // Board agents get a smaller render than the video model: enough to read a
+    // line drawing, a fraction of the bytes and tokens.
     const { imageA, imageB } = renderClipFrames(
       getSketch(sb, clip.startFrameId),
-      getSketch(sb, clip.endFrameId)
+      getSketch(sb, clip.endFrameId),
+      BOARD_W,
+      BOARD_H
     )
     setBoardImages({ imageA, imageB })
     setBoardFor(clipId)

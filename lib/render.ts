@@ -105,6 +105,15 @@ export function canvasToBase64(canvas: HTMLCanvasElement): string {
   return comma === -1 ? '' : url.slice(comma + 1)
 }
 
+/**
+ * Size used for the BOARD agents, as opposed to the video model. A vision model
+ * reading "what is drawn and what moved" needs far less than 720p for flat line
+ * art, and a smaller image means fewer image tokens and a shorter upload - both
+ * of which shrink the latency tail. The video model still gets full resolution.
+ */
+export const BOARD_W = 768
+export const BOARD_H = 432
+
 export interface RenderedPair {
   box: Rect
   /** Bare base64 PNG, for the API. */
@@ -115,11 +124,22 @@ export interface RenderedPair {
   previewB: string
 }
 
-/** Rasterise both keyframes of a clip through one shared box. */
-export function renderClipFrames(a: Sketch, b: Sketch): RenderedPair {
+/**
+ * Rasterise both keyframes of a clip through one shared box.
+ *
+ * Both images ALWAYS share a box regardless of size, so the pair stays
+ * spatially consistent - a board agent and the video model see the same
+ * framing, just at different resolutions.
+ */
+export function renderClipFrames(
+  a: Sketch,
+  b: Sketch,
+  width = RENDER_W,
+  height = RENDER_H
+): RenderedPair {
   const box = clipBox(a, b)
-  const ca = renderSketch(a, box)
-  const cb = renderSketch(b, box)
+  const ca = renderSketch(a, box, width, height)
+  const cb = renderSketch(b, box, width, height)
   return {
     box,
     imageA: canvasToBase64(ca),
