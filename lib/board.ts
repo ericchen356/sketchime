@@ -139,14 +139,12 @@ export function crewName(role: string): string {
 }
 
 /** Two-letter monogram for a crew member's avatar. */
-export function crewInitials(role: string): string {
-  const words = crewName(role).split(/\s+/).filter(Boolean)
-  if (words.length === 0) return '?'
-  if (words.length === 1) return words[0].slice(0, 2).replace(/^./, (c) => c.toUpperCase())
-  return words
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('')
+export function crewIcon(role: string): 'director' | 'camera' | 'motion' | 'palette' {
+  const r = role.toLowerCase()
+  if (r.includes('cinematograph')) return 'camera'
+  if (r.includes('animator')) return 'motion'
+  if (r.includes('art')) return 'palette'
+  return 'director'
 }
 
 export const BOARD_STEP_IDS: BoardStepId[] = BOARD_STEPS.map((s) => s.id)

@@ -15,36 +15,36 @@
   color-scheme: light;
 
   /* ---- ground & surfaces ---- */
-  --paper: #faf9f7;
+  --paper: #f7f7f9;
   --surface: #ffffff;
-  --surface-sunk: #f5f3f0;
+  --surface-sunk: #f2f2f5;
   --hover: rgba(28, 27, 26, 0.055);
   --press: rgba(28, 27, 26, 0.1);
 
   /* ---- text ---- */
-  --ink: #1b1a18;
-  --ink-soft: #4e4941;
-  --muted: #6b665e;
+  --ink: #16161a;
+  --ink-soft: #45454f;
+  --muted: #6e6e7a;
 
   /* ---- filled states ----
      The strongest emphasis available, deliberately still a shade of paper
      rather than black. Selection reads through fill + border + weight instead
      of an inverted slab, which kept dropping black rectangles into an
      otherwise warm, light UI. */
-  --fill: #e9e4db;
-  --fill-hover: #e0dad0;
-  --fill-line: rgba(28, 27, 26, 0.26);
-  --on-fill: #1b1a18;
+  --fill: #ecebf1;
+  --fill-hover: #e3e2ea;
+  --fill-line: rgba(22, 22, 26, 0.14);
+  --on-fill: #16161a;
 
   /* ---- lines ---- */
-  --line: rgba(28, 27, 26, 0.1);
-  --line-strong: rgba(28, 27, 26, 0.19);
+  --line: rgba(22, 22, 26, 0.08);
+  --line-strong: rgba(22, 22, 26, 0.14);
 
   /* ---- accent ---- */
-  --accent: #2e6ecb;
-  --accent-soft: rgba(46, 110, 203, 0.11);
-  --accent-line: rgba(46, 110, 203, 0.4);
-  --focus: #2e6ecb;
+  --accent: #6d4aff;
+  --accent-soft: rgba(109, 74, 255, 0.1);
+  --accent-line: rgba(109, 74, 255, 0.36);
+  --focus: #6d4aff;
 
   /* ---- state ---- */
   --success: #2f7350;
@@ -58,15 +58,15 @@
   --danger-line: rgba(191, 55, 45, 0.3);
 
   /* ---- elevation ---- */
-  --shadow-1: 0 1px 2px rgba(28, 27, 26, 0.05), 0 1px 1px rgba(28, 27, 26, 0.04);
-  --shadow-2: 0 4px 14px rgba(28, 27, 26, 0.07), 0 1px 3px rgba(28, 27, 26, 0.05);
-  --shadow-3: 0 18px 48px rgba(28, 27, 26, 0.16), 0 2px 8px rgba(28, 27, 26, 0.08);
+  --shadow-1: 0 1px 2px rgba(22, 22, 26, 0.04), 0 1px 3px rgba(22, 22, 26, 0.05);
+  --shadow-2: 0 2px 4px rgba(22, 22, 26, 0.04), 0 8px 24px rgba(22, 22, 26, 0.07);
+  --shadow-3: 0 4px 10px rgba(22, 22, 26, 0.06), 0 24px 60px rgba(22, 22, 26, 0.16);
 
   /* ---- radii ---- */
-  --r-xs: 6px;
-  --r-sm: 9px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --r-xs: 7px;
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 18px;
   --r-xl: 22px;
   --r-pill: 999px;
 
@@ -102,8 +102,8 @@
      exported onto white, so a dark artboard would both hide the drawing and
      misrepresent the render. Drawing apps universally keep the canvas at
      paper colour and theme only the chrome around it. */
-  --artboard: #fbfaf8;
-  --artboard-grid: rgba(28, 27, 26, 0.14);
+  --artboard: #fbfbfc;
+  --artboard-grid: rgba(22, 22, 26, 0.11);
 }
 
 /* Light only, on purpose.
@@ -271,10 +271,10 @@ button:disabled {
   background: var(--accent);
   border-color: transparent;
   font-weight: 650;
-  box-shadow: 0 1px 2px rgba(46, 110, 203, 0.28);
+  box-shadow: 0 1px 2px rgba(109, 74, 255, 0.3), 0 6px 16px rgba(109, 74, 255, 0.18);
 }
 .btn-primary:hover:not(:disabled) {
-  background: #2a63b8;
+  background: #5c3ae6;
   border-color: transparent;
 }
 
@@ -1245,11 +1245,9 @@ button:disabled {
   place-items: center;
   width: 24px;
   height: 24px;
-  font-size: 10.5px;
-  font-weight: 700;
   color: var(--muted);
   background: var(--hover);
-  border-radius: 50%;
+  border-radius: var(--r-sm);
 }
 .crew-done .crew-avatar {
   color: var(--surface);
@@ -1626,11 +1624,9 @@ button:disabled {
   width: 26px;
   height: 26px;
   flex: none;
-  font-size: 11px;
-  font-weight: 700;
   color: var(--on-fill);
   background: var(--fill);
-  border-radius: 50%;
+  border-radius: var(--r-sm);
 }
 .avatar-ok {
   background: var(--success);

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { FrameThumb } from './FrameThumb'
 import { Icon } from './Icon'
-import { BOARD_STEPS, crewInitials, crewName } from '@/lib/board'
+import { BOARD_STEPS, crewIcon, crewName } from '@/lib/board'
 import { answeredCount, isBoardComplete, isStepDone } from '@/lib/compile'
 import { CLIP_SECONDS, type Clip, type EndFrameMode, type Storyboard } from '@/lib/types'
 import { estimateClipCost } from '@/lib/gemini-client'
@@ -204,7 +204,7 @@ export function ClipDetail({
             return (
               <li key={s.id} className={`crew-row${done ? ' crew-done' : ''}`}>
                 <span className="crew-avatar" aria-hidden="true">
-                  {done ? <Icon name="check" size={13} /> : crewInitials(s.role)}
+                  {done ? <Icon name="check" size={13} /> : <Icon name={crewIcon(s.role)} size={13} />}
                 </span>
                 <span>
                   <span className="crew-name">{crewName(s.role)}</span>

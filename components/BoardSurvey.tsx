@@ -6,7 +6,7 @@ import { Icon } from './Icon'
 import {
   BOARD_STEPS,
   CUSTOM_OPTION_LABEL,
-  crewInitials,
+  crewIcon,
   crewName,
   offlineDirective,
   offlineTurn
@@ -125,6 +125,7 @@ export function BoardSurvey({
           briefQuestion: step.question,
           defaultDirective: step.defaultDirective,
           probes: step.probes,
+          fallbackOptions: step.options,
           minTurns: MIN_TURNS_PER_AGENT,
           intent,
           styleNote,
@@ -332,7 +333,11 @@ export function BoardSurvey({
               }
               aria-current={i === index ? 'step' : undefined}
             >
-              {satisfied(board[s.id]) ? <Icon name="check" size={14} /> : crewInitials(s.role)}
+              {satisfied(board[s.id]) ? (
+                <Icon name="check" size={14} />
+              ) : (
+                <Icon name={crewIcon(s.role)} size={15} />
+              )}
             </button>
           </li>
         ))}
@@ -344,7 +349,7 @@ export function BoardSurvey({
             {turn.observation && (
               <p className="observation">
                 <span className="avatar" aria-hidden="true">
-                  {crewInitials(step.role)}
+                  <Icon name={crewIcon(step.role)} size={14} />
                 </span>
                 <span>{turn.observation}</span>
               </p>

@@ -42,6 +42,10 @@ export type IconName =
   | 'key'
   | 'more'
   | 'onion'
+  | 'director'
+  | 'camera'
+  | 'motion'
+  | 'palette'
 
 interface Props {
   name: IconName
@@ -150,6 +154,38 @@ const PATHS: Record<IconName, React.JSX.Element> = {
     <>
       <rect x="7.2" y="7.2" width="8.4" height="8.4" rx="1.8" />
       <path d="M12.4 4.4H5.8a1.4 1.4 0 0 0-1.4 1.4v6.6" />
+    </>
+  ),
+  // Clapperboard: pacing and timing.
+  director: (
+    <>
+      <path d="M2.5 7.5h15v8.5a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z" />
+      <path d="M2.8 7.5 4.4 3.6l14.3 1.6-.5 2.3z" />
+      <path d="m7.6 4.1-1.3 3.4M12 4.6l-1.3 3.4" />
+    </>
+  ),
+  // Camera: framing and movement.
+  camera: (
+    <>
+      <path d="M2.5 6.5h9a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" />
+      <path d="m12.5 10 5-2.6v5.2z" />
+    </>
+  ),
+  // An arc with follow-through: deformation and secondary motion.
+  motion: (
+    <>
+      <path d="M2.5 14.5c3.5-8 11.5-8 15 0" />
+      <circle cx="5" cy="13.6" r="1.4" />
+      <circle cx="15" cy="13.6" r="1.4" />
+    </>
+  ),
+  // Palette: backdrop, effects and colour.
+  palette: (
+    <>
+      <path d="M10 2.5a7.5 7.5 0 0 0 0 15c1 0 1.6-.7 1.6-1.5 0-.9-.8-1.3-.8-2.1 0-.7.6-1.2 1.3-1.2h1.5A4.4 4.4 0 0 0 18 8.2C17.6 4.9 14.1 2.5 10 2.5z" />
+      <circle cx="6.6" cy="8.2" r="1" fill="currentColor" stroke="none" />
+      <circle cx="9.8" cy="6.1" r="1" fill="currentColor" stroke="none" />
+      <circle cx="13.3" cy="7.4" r="1" fill="currentColor" stroke="none" />
     </>
   ),
   crew: (

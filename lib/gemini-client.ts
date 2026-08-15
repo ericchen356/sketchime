@@ -204,6 +204,7 @@ export interface BoardTurnPayload {
   history: { question: string; answer: string }[]
   defaultDirective: string
   probes: string[]
+  fallbackOptions: { key: string; text: string }[]
   minTurns: number
   turnsRemaining: number
   /** Forbid another question; the agent must commit this turn. */

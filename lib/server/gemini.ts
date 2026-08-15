@@ -517,6 +517,12 @@ export interface BoardTurnRequest {
   history: { question: string; answer: string }[]
   /** Facets of the remit this member should work through. */
   probes: string[]
+  /**
+   * This step's canonical three options. Used only when a reply arrives without
+   * a usable option list - the spec's own wording beats a generic Yes/No, which
+   * would ask the user to choose between meaningless alternatives.
+   */
+  fallbackOptions?: { key: string; text: string }[]
   /** Questions it must ask before it may commit. */
   minTurns: number
   /** Safe instruction to fall back on. NEVER the brief question - see below. */
@@ -556,6 +562,32 @@ const BOARD_SCHEMA = {
 } as const
 
 /**
+ * The schema used while an agent still owes questions.
+ *
+ * It has NO `satisfied` and NO `directive` field, so committing is not
+ * expressible - the model cannot decline to ask. Telling it not to commit was
+ * tried and failed: every agent committed on turn one, was pushed back, and
+ * committed again. Structured output is a contract, so the fix is to remove the
+ * option from the contract rather than argue with the model about it.
+ */
+const QUESTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    observation: { type: 'string' },
+    question: { type: 'string' },
+    options: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { key: { type: 'string' }, text: { type: 'string' } },
+        required: ['key', 'text']
+      }
+    }
+  },
+  required: ['observation', 'question', 'options']
+} as const
+
+/**
  * Last-resort directive when an agent is forced to commit and still gives
  * nothing usable: restate what the user actually chose. Blunt, but it is their
  * own words and it keeps the compiled prompt truthful.
@@ -581,40 +613,19 @@ export async function boardTurn(
   req: BoardTurnRequest,
   key: string
 ): Promise<BoardTurnResponse> {
-  const first = await boardTurnOnce(req, key)
-
   /**
-   * Enforce the question floor. The prompt asks for it; that is not enough -
-   * the same class of instruction was already shown not to hold when the cap
-   * was advisory. An agent that commits early has, by definition, decided
-   * something the user never told it.
-   *
-   * One retry only: if it insists twice, take the directive rather than trap
-   * the user in a loop.
+   * While the agent still owes questions it is given a schema with no way to
+   * say "satisfied", so it must ask. This replaced a politely-worded retry that
+   * did not work: the logs showed every agent committing on turn one, being
+   * pushed back, and committing again - two round trips to arrive at the same
+   * unwanted answer.
    */
-  if (
-    !req.mustCommit &&
-    first.satisfied &&
-    req.history.length < req.minTurns
-  ) {
-    console.warn(
-      `[board] ${req.role} tried to commit after ${req.history.length}/${req.minTurns} questions; pushing back`
-    )
-    const pushed = await boardTurnOnce(
-      {
-        ...req,
-        extraInstruction: `You attempted to finish after only ${req.history.length} question(s). That is not enough — you would be assuming things the user has not told you. Ask your next question now, about a facet you have NOT yet covered. Do not set satisfied=true.`
-      },
-      key
-    )
-    if (!pushed.satisfied) return pushed
-  }
-
-  return first
+  const mustAsk = !req.mustCommit && req.history.length < req.minTurns
+  return boardTurnOnce({ ...req, mustAsk }, key)
 }
 
 async function boardTurnOnce(
-  req: BoardTurnRequest & { extraInstruction?: string },
+  req: BoardTurnRequest & { extraInstruction?: string; mustAsk?: boolean },
   key: string
 ): Promise<BoardTurnResponse> {
   const transcript = req.history.length
@@ -639,7 +650,9 @@ ${req.probes.map((p) => `- ${p}`).join('\n')}
 ${
     req.mustCommit
       ? 'THIS IS YOUR FINAL TURN. Do NOT ask another question. Set satisfied=true and write your directive now, using your best reading of the answers above.'
-      : `You have asked ${req.history.length} question(s). You MUST ask at least ${req.minTurns} before you are allowed to set satisfied=true, and you may ask up to ${req.history.length + req.turnsRemaining}.`
+      : req.mustAsk
+        ? `This is question ${req.history.length + 1} of at least ${req.minTurns}. You are ASKING this turn - there is no way to finish yet, so put your effort into making the question worth asking.`
+        : `You have asked ${req.history.length} question(s), which meets the minimum. Ask another if anything in your remit is still genuinely undecided, otherwise commit.`
   }
 
 HOW TO WORK:
@@ -683,7 +696,7 @@ Answer as JSON matching the schema. When satisfied=true, omit question and optio
         generationConfig: {
           temperature: 0.6,
           responseMimeType: 'application/json',
-          responseSchema: BOARD_SCHEMA
+          responseSchema: req.mustAsk ? QUESTION_SCHEMA : BOARD_SCHEMA
           // No thinking_level here on purpose. It was tried and rejected with
           // `Unknown name "thinking_level"` on this endpoint, and it bought
           // nothing anyway: gemini-3.1-flash-lite already defaults to minimal
@@ -718,6 +731,19 @@ Answer as JSON matching the schema. When satisfied=true, omit question and optio
     .filter((o) => o?.text?.trim())
     .slice(0, 3)
     .map((o, i) => ({ key: ['A', 'B', 'C'][i], text: o.text.trim() }))
+
+  // Answering under QUESTION_SCHEMA there is no `satisfied` field at all, so a
+  // missing one means "asking", not "finished".
+  if (req.mustAsk) {
+    return {
+      observation: parsed.observation?.trim() ?? '',
+      satisfied: false,
+      question: parsed.question?.trim() || req.briefQuestion,
+      // A malformed option list would leave the user with nothing to click, so
+      // fall back to this step's own canonical choices.
+      options: options.length === 3 ? options : (req.fallbackOptions ?? []).slice(0, 3)
+    }
+  }
 
   // HARD STOP. The prompt asks the agent to commit; this guarantees it. Without
   // this the follow-up loop is unbounded and a chatty agent can keep a user
