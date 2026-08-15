@@ -101,7 +101,9 @@ function drawClip(
         reject(new Error('Cancelled.'))
         return
       }
-      ctx.fillStyle = '#000'
+      // White, not black: these clips are white-paper animation, so any
+      // letterbox band should disappear into the artwork rather than frame it.
+      ctx.fillStyle = '#ffffff'
       ctx.fillRect(0, 0, OUT_W, OUT_H)
       ctx.drawImage(video, x, y, w, h)
       raf = requestAnimationFrame(tick)
@@ -142,8 +144,9 @@ export async function stitchClips(urls: string[], opts: StitchOptions = {}): Pro
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Could not open a drawing context for stitching.')
 
-  // Black first frame, so the recording never opens on a transparent canvas.
-  ctx.fillStyle = '#000'
+  // Paper-white first frame, so the recording never opens on a transparent
+  // canvas and never flashes black before the first clip appears.
+  ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, OUT_W, OUT_H)
 
   // Load everything up front: a mid-stitch load stall would be recorded as a

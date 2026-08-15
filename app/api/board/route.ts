@@ -37,6 +37,8 @@ export async function POST(req: Request): Promise<NextResponse> {
         imageA: body.imageA,
         imageB: body.imageB,
         history: body.history ?? [],
+        probes: body.probes ?? [],
+        minTurns: Math.max(1, body.minTurns ?? 1),
         defaultDirective: body.defaultDirective ?? 'Keep the motion simple and consistent.',
         turnsRemaining: Math.max(1, body.turnsRemaining ?? 1),
         mustCommit: !!body.mustCommit

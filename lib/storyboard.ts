@@ -210,12 +210,12 @@ export function endModeReason(sb: Storyboard, clipId: string): string {
   const i = sb.clips.findIndex((c) => c.id === clipId)
   const clip = sb.clips[i]
   if (!clip) return ''
-  if (clip.endFrameMode) return 'set manually for this clip'
+  if (clip.endFrameMode) return 'you chose this yourself'
 
   const next = sb.clips[i + 1]
   return next && next.startFrameId === clip.endFrameId
-    ? `chained into clip ${i + 2}, so the end frame must match exactly`
-    : 'not chained, so the clip can end mid-motion'
+    ? `this clip flows into clip ${i + 2}, so it has to finish on exactly that drawing`
+    : 'nothing follows this clip, so it is free to end mid-movement'
 }
 
 /** Which clips would be affected by editing this frame. Drives the "shared

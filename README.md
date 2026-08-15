@@ -1,7 +1,7 @@
 # sketchime
 
 A multi-clip storyboard tool for hand-drawn 2D animation. Draw keyframes on an
-infinite canvas, direct each transition through a four-step board, and render
+infinite canvas, direct each transition through a four-person crew, and render
 5-second interpolated clips with Gemini/Veo.
 
 ```bash
@@ -10,24 +10,33 @@ cp .env.example .env.local     # add your Gemini key (optional — see below)
 npm run dev
 ```
 
-Everything lives in session memory. There is no database, no accounts, and
-nothing is written to disk — closing the tab discards the board.
+There is no database and no accounts. Drawings are kept in this browser's
+localStorage and finished videos in IndexedDB, so a reload does not lose your
+work; nothing leaves the machine except what is sent to Gemini.
 
 ## How it works
 
-1. **Add a clip.** It gets a start keyframe (Image A) and an end keyframe (Image B).
-2. **Draw them** in the full-screen canvas, with the other keyframe showing
-   through as an onion skin. Most end frames start as a copy of the start frame
-   with one thing moved — the timeline's `→` and the canvas's `shift+D` both do
-   that copy for you.
-3. **Run the board** — four directors, in strict order. Each one *looks at your
-   two keyframes*, says what it sees, and keeps asking until it's satisfied.
-4. **Compile** the prompt, optionally have Gemini tighten it, then generate. The
-   estimated cost of the render is shown next to the button, before the click.
+1. **Add a clip.** It gets a **first frame** and a **last frame**.
+2. **Draw them** in the full-screen canvas, with the other frame showing through
+   as an onion skin. Most last frames start as a copy of the first with one
+   thing moved — the storyboard's `→` and the canvas's `shift+D` both do that
+   copy for you.
+3. **Talk to your crew** — four specialists, in strict order. Each one *looks at
+   your two drawings*, says what it sees, and keeps asking until it's satisfied.
+4. **Make the clip.** The brief is compiled from what the crew settled on, and
+   the estimated cost is shown next to the button, before the click.
 
-### The board actually looks at your drawing
+The interface follows those steps literally: the storyboard runs down the left,
+and the clip you have selected opens on the right as three numbered stages —
+*draw*, *say what happens*, *make the animation* — with the current one lifted
+out of the stack. Everything that belongs to the machinery rather than the task
+(the compiled prompt, the end-frame constraint, the Gemini rewrite pass) sits
+behind a **Fine-tuning** disclosure at the bottom of that panel, and model ids
+and environment variables behind **Technical details** in Settings.
 
-Each board member is a vision agent. It receives both rendered keyframes, opens
+### The crew actually looks at your drawing
+
+Each crew member is a vision agent. It receives both rendered keyframes, opens
 with an observation citing something concrete in them, then asks a question whose
 three options are written *for that drawing* — the choices differ between a
 bouncing ball and a character turning. Option D is always a write-in.
@@ -40,8 +49,8 @@ the next member take over.
 Follow-ups are capped at `MAX_TURNS_PER_AGENT` (4), and the cap is *enforced in
 code* on both the client and the server — telling the agent about it in the
 prompt is not enough, since a chatty one simply ignores it. Past the limit the
-reply is rewritten into a commit whatever it says. **Enough — decide** cuts the
-questioning short at any point.
+reply is rewritten into a commit whatever it says. **That's enough, decide** cuts
+the questioning short at any point.
 
 Every step also carries a neutral `defaultDirective` for the case where an agent
 commits without producing anything usable. That slot used to fall back to the
@@ -50,8 +59,8 @@ video model, where it directed nothing at all. Compiled directives are sanitised
 for question-shaped text on the way out, so a board answered before that check
 existed is repaired rather than baking the question in forever.
 
-Without an API key the board degrades honestly: it falls back to the spec's fixed
-questions and options, single-turn, and labels itself `offline` so you know
+Without an API key the crew degrades honestly: it falls back to the spec's fixed
+questions and options, single-turn, and wears an **Offline** badge so you know
 nobody looked at your frames.
 
 ### Continuity chaining
@@ -61,13 +70,15 @@ two clips reference the **same frame object**. Editing that drawing from either
 side moves both, which is what keeps the cut invisible, and it survives redoing
 or re-editing a clip.
 
-The timeline marks each join. **Linked** joins can be split (`unlink` forks the
-frame into two independent copies, so no work is lost and the clips can diverge).
+The storyboard marks each join between two clips. A join labelled **Flows on**
+can be split — that forks the frame into two independent copies, so no work is
+lost and the clips can diverge.
 
 **Reordering deliberately does not re-chain.** Dragging clip 3 to the front would
 have to overwrite one of two boundary drawings to keep the chain intact, silently
-destroying work. Instead the link breaks, the seam is marked **cut**, and you can
-re-link it explicitly — with a confirmation, since that *is* the destructive move.
+destroying work. Instead the link breaks, the join is marked **Hard cut**, and
+you can join them again explicitly — with a confirmation, since that *is* the
+destructive move.
 
 ### Guide vs exact end frames
 
@@ -76,14 +87,16 @@ that exact image, so when its natural motion diverges from the target it
 reconciles by snapping, regressing or fading in the final second. No amount of
 prompt wording talks it out of that — the only way out is to not send the frame.
 
-So each clip has an end-frame mode, shown and overridable in the clip panel:
+So each clip has an end-frame mode, shown and overridable under **Fine-tuning**
+in the clip panel as *how the clip ends*:
 
-- **`exact`** pins the frame. Required wherever clips are chained, because clip
-  N's last frame has to *be* clip N+1's first frame or the cut shows.
-- **`guide`** withholds the image and lets the clip run out mid-motion. The end
-  frame still steers the action — a vision model turns it into prose via
-  `/api/describe`, and that description is the entire channel through which the
-  intended destination reaches the video model.
+- **`exact`** — "Land exactly" — pins the frame. Required wherever clips are
+  chained, because clip N's last frame has to *be* clip N+1's first frame or the
+  cut shows.
+- **`guide`** — "Let it run on" — withholds the image and lets the clip run out
+  mid-motion. The end frame still steers the action: a vision model turns it into
+  prose via `/api/describe`, and that description is the entire channel through
+  which the intended destination reaches the video model.
 
 The default is derived per seam rather than set globally: a clip whose end frame
 is shared with the next clip is pinned, and an unchained one is free to end
@@ -96,9 +109,9 @@ Both keyframes of a clip are rasterised through one shared 16:9 world box. Rende
 them to their own tight crops and the model reads the crop difference as camera
 movement, so the subject appears to jump between the first and last frame.
 
-The board agents get the same pair at 768×432 rather than full size — a vision
-model reading "what is drawn and what moved" needs far less than 720p for flat
-line art, and the board runs four agents over several turns each.
+The crew get the same pair at 768×432 rather than full size — a vision model
+reading "what is drawn and what moved" needs far less than 720p for flat line
+art, and the crew runs four agents over several turns each.
 
 ## Gemini setup
 
@@ -191,9 +204,15 @@ lib/storyboard.ts   chaining, seams, link/unlink, reorder, frame GC,
 lib/server/gemini.ts  ALL provider-specific detail, server-only: model discovery
                       and failover, vision board agents, frame description,
                       prompt revision, Veo + Omni Flash video
+lib/persist.ts      storyboard -> localStorage, defensively read back
+lib/videoStore.ts   finished videos -> IndexedDB (too big for localStorage)
+lib/stitch.ts       join the rendered clips into one downloadable file
 app/api/            board · describe · revise · veo · config (all proxies)
+app/globals.css     the design tokens, then everything styled from them
 components/         SketchLayer (canvas) · Canvas (surface) · Rail (tools)
-                    Studio (app) · Timeline · BoardSurvey · ClipDetail
+                    Studio (shell) · Timeline (storyboard) · ClipDetail (the
+                    three-stage panel) · BoardSurvey (crew room) · FinalCut
+                    Modal · ConfirmDialog · SettingsDialog · FrameThumb · Icon
 ```
 
 Three things carry most of the weight:
@@ -228,7 +247,24 @@ Three things carry most of the weight:
 - Copying a keyframe clones strokes with fresh ids and copied point arrays. Two
   frames about to be edited apart must never end up aliasing each other.
 
-## Design skill
+## The design system
+
+Everything visual comes from a token declared at the top of `app/globals.css`.
+There are no raw colours below that block, which is what makes the dark theme a
+list of overrides rather than a second stylesheet to keep in sync.
+
+Two rules there are load-bearing rather than cosmetic:
+
+- **The artboard is pinned light in both themes.** Ink is drawn in dark palette
+  colours and exported onto white, so a dark drawing surface would both hide the
+  drawing and misrepresent the render. Only the chrome around it themes.
+- **The focus ring is defined once, on `:focus-visible`, and never removed.** A
+  control you can reach with Tab but cannot see is unusable, and it is the first
+  thing a restyle tends to break.
+
+Icons are one family (`components/Icon.tsx`), drawn on a single 20×20 grid at
+stroke 1.5 — no text glyphs standing in for icons, since those render
+differently on every platform and cannot be themed.
 
 `.claude/skills/` holds [UI/UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill),
 installed project-scoped with `npx ui-ux-pro-max-cli init --ai claude`. It is

@@ -1,17 +1,126 @@
+/* ================================================================
+ * sketchime — design tokens
+ *
+ * Everything visual comes from a token. Nothing below this block should
+ * contain a raw colour, because the app has two themes and a hardcoded hex
+ * only ever looks right in one of them.
+ *
+ * The palette is deliberately warm-neutral rather than branded: this is a
+ * drawing tool, and the drawing is the only thing on screen that should be
+ * saturated. One blue accent carries focus, selection and links; green, amber
+ * and red carry state and nothing else.
+ * ================================================================ */
+
 :root {
-  --paper: #f7f6f3;
+  color-scheme: light;
+
+  /* ---- ground & surfaces ---- */
+  --paper: #faf9f7;
   --surface: #ffffff;
-  --ink: #1c1b1a;
-  --muted: #78736c;
+  --surface-sunk: #f5f3f0;
+  --hover: rgba(28, 27, 26, 0.055);
+  --press: rgba(28, 27, 26, 0.1);
+
+  /* ---- text ---- */
+  --ink: #1b1a18;
+  --ink-soft: #4e4941;
+  --muted: #6b665e;
+
+  /* ---- filled states ----
+     The strongest emphasis available, deliberately still a shade of paper
+     rather than black. Selection reads through fill + border + weight instead
+     of an inverted slab, which kept dropping black rectangles into an
+     otherwise warm, light UI. */
+  --fill: #e9e4db;
+  --fill-hover: #e0dad0;
+  --fill-line: rgba(28, 27, 26, 0.26);
+  --on-fill: #1b1a18;
+
+  /* ---- lines ---- */
   --line: rgba(28, 27, 26, 0.1);
-  --line-strong: rgba(28, 27, 26, 0.22);
-  --accent: #4478cc;
-  --danger: #d94f45;
-  --shadow: 0 10px 34px rgba(28, 27, 26, 0.12);
-  --radius: 14px;
+  --line-strong: rgba(28, 27, 26, 0.19);
+
+  /* ---- accent ---- */
+  --accent: #2e6ecb;
+  --accent-soft: rgba(46, 110, 203, 0.11);
+  --accent-line: rgba(46, 110, 203, 0.4);
+  --focus: #2e6ecb;
+
+  /* ---- state ---- */
+  --success: #2f7350;
+  --success-soft: rgba(47, 115, 80, 0.12);
+  --success-line: rgba(47, 115, 80, 0.3);
+  --warn: #8a5a12;
+  --warn-soft: rgba(214, 165, 52, 0.18);
+  --warn-line: rgba(160, 116, 30, 0.34);
+  --danger: #bf372d;
+  --danger-soft: rgba(191, 55, 45, 0.1);
+  --danger-line: rgba(191, 55, 45, 0.3);
+
+  /* ---- elevation ---- */
+  --shadow-1: 0 1px 2px rgba(28, 27, 26, 0.05), 0 1px 1px rgba(28, 27, 26, 0.04);
+  --shadow-2: 0 4px 14px rgba(28, 27, 26, 0.07), 0 1px 3px rgba(28, 27, 26, 0.05);
+  --shadow-3: 0 18px 48px rgba(28, 27, 26, 0.16), 0 2px 8px rgba(28, 27, 26, 0.08);
+
+  /* ---- radii ---- */
+  --r-xs: 6px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
+  /* ---- spacing (4pt rhythm) ---- */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --s10: 40px;
+  --s12: 48px;
+
+  /* ---- motion ----
+     Three durations, chosen by distance travelled: a state flip, a panel
+     opening, a dialog arriving. One easing for things entering, a symmetric
+     one for things that move in place. */
+  --t-fast: 110ms;
+  --t-mid: 190ms;
+  --t-slow: 300ms;
+  --ease-out: cubic-bezier(0.22, 0.78, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.5, 0, 0.3, 1);
+
+  /* ---- layers ---- */
+  --z-world: 2;
+  --z-chrome: 50;
+  --z-modal: 100;
+  --z-toast: 200;
+
+  /* ---- the artboard ----
+     Pinned light in BOTH themes. Ink is drawn in dark palette colours and
+     exported onto white, so a dark artboard would both hide the drawing and
+     misrepresent the render. Drawing apps universally keep the canvas at
+     paper colour and theme only the chrome around it. */
+  --artboard: #fbfaf8;
+  --artboard-grid: rgba(28, 27, 26, 0.14);
 }
 
-* {
+/* Light only, on purpose.
+   There was a prefers-color-scheme: dark palette here. It meant the whole app
+   turned dark for anyone whose OS is in dark mode, which is not what this tool
+   should do: the artboard is paper, the exported frames are white, and the
+   chrome is meant to sit quietly around them in shades of that paper. Honouring
+   the OS preference put the app in a palette that fought its own output. */
+
+
+/* ================================================================
+ * Reset & base
+ * ================================================================ */
+
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -21,8 +130,9 @@ html,
 body {
   width: 100%;
   height: 100%;
-  /* One pan camera replaces native scroll. The viewport is fixed and the world
-     is panned by transform, so the document itself never scrolls. */
+  /* One pan camera replaces native scroll on the drawing surface. The viewport
+     is fixed and the world is panned by transform, so the document itself must
+     never scroll; every scrolling region below supplies its own. */
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -30,40 +140,1731 @@ body {
 body {
   background: var(--paper);
   color: var(--ink);
-  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* The fixed viewport onto the plane. The world (below) is panned/zoomed inside
-   it; nothing here scrolls. A faint dot grid gives the pan something to read
-   against - without it an empty plane looks frozen while you drag.
+h1,
+h2,
+h3 {
+  font-weight: 650;
+  letter-spacing: -0.011em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+/* One focus ring for the whole app. Never removed, only replaced — a control
+   you can reach with Tab but cannot see is unusable, and it is the single most
+   common accessibility regression in a redesign. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.icon {
+  flex: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Slim scrollbars, so a scrolling column does not announce itself with a
+   full-width platform bar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background-clip: content-box;
+}
+
+/* ================================================================
+ * Primitives — buttons, fields, chips, notes
+ * ================================================================ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  /* 36px tall: comfortably above the 24px web target minimum, and the same
+     height as every other control so rows line up without ad-hoc margins. */
+  min-height: 36px;
+  padding: 0 var(--s3);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.btn:disabled {
+  opacity: 0.45;
+}
+
+/* Exactly one primary per view. It is the highest-contrast thing on screen,
+   which is what makes "what do I do next" answerable at a glance. */
+.btn-primary {
+  color: var(--on-fill);
+  /* A hair darker than --fill so it separates from the neutral chips that also
+     use the fill token. */
+  background: linear-gradient(var(--fill), var(--fill-hover));
+  border-color: var(--fill-line);
+  /* Weight and lift carry the emphasis that the old inverted slab did. */
+  font-weight: 700;
+  box-shadow: var(--shadow-1);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--fill-hover);
+  border-color: var(--fill-line);
+}
+
+.btn-danger {
+  color: var(--surface);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-small {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.btn-large {
+  min-height: 46px;
+  padding: 0 var(--s6);
+  font-size: 15px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
+/* A segmented control: two or three mutually exclusive states in one well. */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--hover);
+  border-radius: var(--r-sm);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.chip:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+.chip-on,
+.chip-on:hover {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+/* Sentence case, not shouted uppercase. A label is read, not scanned as a
+   header, and letter-spaced caps are measurably slower to read. */
+.field-label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.field-hint {
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 68ch;
+}
+.field-hint code {
+  padding: 1px 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  background: var(--hover);
+  border-radius: var(--r-xs);
+}
+
+.field-input {
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 12px;
+  /* 16px on touch keeps iOS from zooming the viewport on focus. */
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+.field-input::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.field-input:focus-visible {
+  outline: none;
+}
+
+.prose {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  max-width: 68ch;
+}
+.prose p + p {
+  margin-top: var(--s3);
+}
+.prose b {
+  color: var(--ink);
+}
+
+.empty {
+  max-width: 60ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Inline state messages. All three share a shape so they read as one family. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid;
+  border-radius: var(--r-sm);
+}
+.notice .icon {
+  margin-top: 1px;
+}
+.notice-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
+}
+.notice-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+}
+.notice-info {
+  color: var(--ink-soft);
+  background: var(--hover);
+  border-color: transparent;
+}
+.notice .btn {
+  margin-left: auto;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 650;
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.badge-warn {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ================================================================
+ * App shell
+ * ================================================================ */
+
+/* html/body are locked for the drawing camera, so the app supplies its own
+   scroll container rather than unlocking the document. */
+.app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex: none;
+  height: 56px;
+  padding: 0 var(--s5);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--on-fill);
+  background: var(--fill);
+  border-radius: 8px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+/* Two columns on a desktop: the storyboard on the left, the shot you are
+   working on pinned to the right. The previous single scrolling column pushed
+   the controls for the selected clip below the fold as soon as there were a
+   few clips, so the thing you were editing and the thing you were editing it
+   with were never on screen together. */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  flex: 1;
+  min-height: 0;
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s6);
+  min-width: 0;
+  padding: var(--s5) var(--s5) var(--s12);
+  overflow-y: auto;
+}
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--s5);
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+}
+
+.inspector-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s3);
+  height: 100%;
+  padding: var(--s6);
+  text-align: center;
+  color: var(--muted);
+}
+.inspector-empty .icon {
+  color: var(--line-strong);
+}
+
+/* ================================================================
+ * Welcome (first run)
+ * ================================================================ */
+
+.welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s6);
+  padding: var(--s8) var(--s5) var(--s12);
+  overflow-y: auto;
+  text-align: center;
+}
+
+.welcome h2 {
+  font-size: clamp(24px, 3.4vw, 34px);
+  max-width: 24ch;
+}
+
+.welcome-lead {
+  max-width: 52ch;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* Two sheets and an arrow: the whole product in one picture. */
+.welcome-art {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  color: var(--muted);
+}
+
+.welcome-sheet {
+  display: grid;
+  place-items: center;
+  width: 118px;
+  height: 66px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+}
+.welcome-sheet svg {
+  color: var(--muted);
+  opacity: 0.55;
+}
+
+.welcome-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  width: 100%;
+  max-width: 720px;
+  text-align: left;
+}
+
+.welcome-step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.welcome-step h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 14px;
+}
+.welcome-step p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.step-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--on-fill);
+  background: var(--fill);
+  border-radius: 7px;
+}
+
+/* ================================================================
+ * Sections
+ * ================================================================ */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.section-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 15px;
+}
+.section-head .icon {
+  color: var(--muted);
+}
+
+.section-meta {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+}
+
+/* ================================================================
+ * Storyboard strip
+ * ================================================================ */
+
+.strip {
+  display: flex;
+  /* Wraps onto further rows instead of running off the right edge. A storyboard
+     is read as a grid of beats, and an endless horizontal scroll hides
+     everything past the third clip. */
+  flex-wrap: wrap;
+  /* flex-start, not stretch: with stretch, one tall item sets the height of
+     every item on its row, and any percentage height inside compounds it. */
+  align-items: flex-start;
+  gap: var(--s4) 0;
+  padding-bottom: var(--s2);
+}
+
+.strip-cell {
+  display: flex;
+  align-items: center;
+  flex: none;
+  scroll-snap-align: start;
+}
+
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  width: 292px;
+  padding: var(--s3);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+    opacity var(--t-fast) var(--ease-out);
+}
+.clip-card:hover {
+  border-color: var(--line-strong);
+}
+.clip-card-on {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--hover), var(--shadow-2);
+}
+.clip-card-dragging {
+  opacity: 0.35;
+}
+.clip-card-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.clip-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.clip-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: var(--r-xs);
+}
+.clip-card-on .clip-num {
+  color: var(--on-fill);
+  background: var(--fill);
+}
+
+/* Status as a coloured dot plus a word. Colour alone would carry the meaning
+   for nobody who cannot separate the hues; the word carries it for everyone. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: currentColor;
+  border-radius: 50%;
+}
+.status-ready {
+  color: var(--success);
+}
+.status-generating {
+  color: var(--warn);
+}
+.status-done {
+  color: var(--accent);
+}
+.status-error {
+  color: var(--danger);
+}
+.status-generating .status-dot {
+  animation: pulse 1.4s var(--ease-in-out) infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The grip only appears on hover: it is an affordance, not information, and a
+   permanent one on every card is visual noise on a screen full of cards. */
+.clip-grip {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  color: var(--muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+.clip-card:hover .clip-grip,
+.clip-card:focus-within .clip-grip {
+  opacity: 0.75;
+}
+
+.clip-frames {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* Fluid, not fixed. Two 118px thumbnails plus the copy button do not fit a
+   264px card, and the overflow pushed the second frame out through the card's
+   right edge and over the seam next to it. The inline pixel size on the
+   thumbnail now only sets the canvas backing resolution. */
+.frame-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+}
+.clip-frames .thumb,
+.clip-frames canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+.frame-btn:hover .thumb {
+  border-color: var(--accent);
+}
+.frame-btn:hover .thumb-cap,
+.frame-btn:focus-visible .thumb-cap {
+  opacity: 1;
+}
+
+.thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  /* Always light: these previews show exactly what gets exported, which is ink
+     on white. Tinting them for dark mode would misreport the render. */
+  background: #ffffff;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+.thumb canvas {
+  display: block;
+}
+
+/* The frame's name, revealed on hover rather than stamped permanently on the
+   drawing. "A" and "B" meant nothing to anyone who had not read the docs. */
+.thumb-cap {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 8px 7px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  /* No scrim. This used to be a dark gradient, which over an empty frame looked
+     like an inner shadow smeared across the bottom of the box. Plain muted text
+     on the white thumbnail says the same thing and disturbs nothing. */
+  color: var(--muted);
+  text-align: center;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.thumb-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 var(--s2);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: center;
+  /* Fixed, not tokenised: the thumbnail is always white paper. */
+  color: rgba(28, 27, 26, 0.32);
+  pointer-events: none;
+}
+
+/* The arrow between the two thumbnails is also the "start the last frame as a
+   copy of the first" button, because that is what the arrow means. */
+.frame-copy {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 34px;
+  flex: none;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-xs);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.frame-copy:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+.frame-copy:disabled {
+  opacity: 0.3;
+}
+
+.clip-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.clip-intent {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clip-intent-blank {
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.pips {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.pip {
+  width: 6px;
+  height: 6px;
+  background: var(--line-strong);
+  border-radius: 50%;
+}
+.pip-on {
+  background: var(--success);
+}
+
+/* ---- the join between two clips ---- */
+
+.seam {
+  display: grid;
+  place-items: center;
+  width: 74px;
+  flex: none;
+}
+
+.seam-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  transition: background var(--t-fast) var(--ease-out);
+}
+.seam-btn:hover {
+  background: var(--hover);
+}
+.seam-linked {
+  color: var(--success);
+}
+.seam-broken {
+  color: var(--danger);
+}
+
+/* A dashed ghost card at the end of the strip. Far more discoverable than a
+   button in a header — the place you add a clip is the place clips live. */
+.add-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  width: 156px;
+  /* align-self, NOT min-height: 100%. A percentage height here resolves against
+     the whole wrapped strip rather than this tile's own row, which stretched it
+     to the combined height of every row. */
+  align-self: stretch;
+  margin-left: var(--s3);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+.add-card:hover {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--muted);
+}
+
+/* ================================================================
+ * Inspector — the guided three-step flow for one clip
+ * ================================================================ */
+
+.inspect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.inspect-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.inspect-head h2 {
+  font-size: 18px;
+}
+.inspect-sub {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Each of the three stages is a numbered card that says where you are and what
+   is left. This is the whole navigational model of the app: draw, direct,
+   render — in that order, always visible, never inferred. */
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s4);
+  background: var(--surface-sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: border-color var(--t-mid) var(--ease-out), background var(--t-mid) var(--ease-out);
+}
+/* The stage you should be looking at is lifted out of the stack. */
+.stage-active {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+
+.stage-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.stage-num {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: 50%;
+}
+.stage-active .stage-num {
+  color: var(--on-fill);
+  background: var(--fill);
+}
+.stage-complete .stage-num {
+  color: var(--surface);
+  background: var(--success);
+}
+
+.stage-title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.stage-state {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.stage-complete .stage-state {
+  color: var(--success);
+}
+
+/* ---- stage 1: the two frames ---- */
+
+.frame-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.frame-slot {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+}
+/* The thumbnail carries an inline pixel size (it also drives the canvas
+   backing store), so the fluid override in the inspector has to outrank it. */
+.frame-slot .thumb,
+.frame-slot canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+.frame-slot-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.frame-slot:hover .thumb {
+  border-color: var(--accent);
+}
+.frame-slot:hover .frame-slot-label {
+  color: var(--ink);
+}
+
+/* ---- stage 2: the crew ---- */
+
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+
+.crew-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: var(--s2);
+  align-items: start;
+  padding: var(--s2) 0;
+}
+.crew-row + .crew-row {
+  border-top: 1px solid var(--line);
+}
+
+.crew-avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: 50%;
+}
+.crew-done .crew-avatar {
+  color: var(--surface);
+  background: var(--success);
+}
+
+.crew-name {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--muted);
+}
+.crew-done .crew-name {
+  color: var(--ink);
+}
+.crew-said {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.crew-pending {
+  font-size: 12.5px;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* ---- stage 3: render ---- */
+
+.cta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.cta-note {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--muted);
+  list-style: none;
+}
+.blockers li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.blockers .icon {
+  color: var(--warn);
+}
+
+.clip-video {
+  display: block;
+  width: 100%;
+  /* Not black. The clips are white-paper animation, so a black letterbox frames
+     them with a hard edge that fights the rest of the UI. */
+  background: var(--surface-sunk);
+  border-radius: var(--r-md);
+}
+
+/* ---- progressive disclosure ----
+   Everything a first-time user does not need is in here: the exact text sent
+   to the model, the end-frame constraint, the revision pass. It is all still
+   one click away, and nothing is hidden that changes the output silently. */
+.adv {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+}
+
+.adv-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 10px var(--s4);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--r-md);
+  transition: color var(--t-fast) var(--ease-out);
+}
+.adv-summary::-webkit-details-marker {
+  display: none;
+}
+.adv-summary:hover {
+  color: var(--ink);
+}
+.adv-summary .icon {
+  transition: transform var(--t-mid) var(--ease-out);
+}
+.adv[open] .adv-summary .icon {
+  transform: rotate(180deg);
+}
+
+.adv-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s2) var(--s4) var(--s4);
+}
+
+.prompt-well {
+  max-height: 240px;
+  padding: var(--s3);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.revise-row {
+  display: flex;
+  gap: var(--s2);
+}
+.revise-row .field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ================================================================
+ * Final cut
+ * ================================================================ */
+
+.cut-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cut-pill {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--s2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: var(--r-xs);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+.cut-pill-on {
+  color: var(--on-fill);
+  background: var(--fill);
+}
+
+.cut-out {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+
+/* ================================================================
+ * Modals
+ * ================================================================ */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: var(--s5);
+  overflow-y: auto;
+  background: rgba(16, 15, 14, 0.5);
+  backdrop-filter: blur(3px);
+  animation: fade var(--t-mid) var(--ease-out);
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: calc(100dvh - var(--s10));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-3);
+  animation: rise var(--t-slow) var(--ease-out);
+}
+.modal-wide {
+  width: min(720px, 100%);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+}
+.modal:focus {
+  outline: none;
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  flex: none;
+  padding: var(--s5) var(--s5) var(--s3);
+}
+.modal-titles {
+  flex: 1;
+  min-width: 0;
+}
+.modal-head h2 {
+  font-size: 19px;
+}
+.modal-eyebrow {
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.modal-head .icon-btn {
+  margin-left: auto;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  min-height: 0;
+  padding: 0 var(--s5) var(--s5);
+  overflow-y: auto;
+}
+
+.modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s2);
+  flex: none;
+  padding: var(--s3) var(--s5);
+  background: var(--surface-sunk);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+}
+.modal-foot-split {
+  justify-content: space-between;
+}
+
+/* ================================================================
+ * The crew room (board of directors)
+ * ================================================================ */
+
+/* The topic line under the crew member's name in the dialog header. */
+.modal-topic {
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.crew-track {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 0;
+  padding: var(--s1) 0 var(--s2);
+  list-style: none;
+}
+/* Only the nodes AFTER the first one grow: each carries the connector that
+   reaches back to its predecessor, so the row spreads evenly. Growing the
+   first one too would open a gap before the first connector. */
+.crew-node {
+  display: flex;
+  align-items: center;
+}
+.crew-node + .crew-node {
+  flex: 1;
+}
+.crew-node + .crew-node::before {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--line-strong);
+}
+.crew-node-done + .crew-node::before {
+  background: var(--success);
+}
+.crew-node button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  transition: all var(--t-mid) var(--ease-out);
+}
+.crew-node button:disabled {
+  opacity: 0.5;
+}
+.crew-node-done button {
+  color: var(--surface);
+  background: var(--success);
+  border-color: var(--success);
+}
+.crew-node-now button {
+  color: var(--on-fill);
+  background: var(--fill);
+  border-color: var(--fill-line);
+}
+
+/* The conversation scrolls on its own, so a long consultation never pushes the
+   crew track or the Send button off the bottom of the dialog. */
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  max-height: min(48vh, 460px);
+  padding-right: var(--s1);
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.exchange + .exchange {
+  padding-top: var(--s4);
+  border-top: 1px dashed var(--line-strong);
+}
+
+/* What the crew member says they can see in your drawing. Quieter than the
+   question, so the question still reads as the thing to answer. */
+.observation {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  background: var(--surface-sunk);
+  border-radius: var(--r-md);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--on-fill);
+  background: var(--fill);
+  border-radius: 50%;
+}
+.avatar-ok {
+  background: var(--success);
+}
+
+.question {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.option {
+  display: flex;
+  gap: 11px;
+  width: 100%;
+  padding: 12px 13px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--line-strong);
+  border-radius: var(--r-md);
+  transition: border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+.option:hover:not(:disabled) {
+  border-color: var(--muted);
+  background: var(--hover);
+}
+.option-on,
+.option-on:hover {
+  border-color: var(--ink);
+  background: var(--hover);
+}
+
+.option-key {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: var(--r-xs);
+}
+.option-on .option-key {
+  color: var(--on-fill);
+  background: var(--fill);
+}
+
+.option-write {
+  flex-direction: column;
+  gap: var(--s2);
+  cursor: default;
+}
+.option-hit {
+  display: flex;
+  gap: 11px;
+  padding: 0;
+  font-size: 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+}
+.option-input {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--surface-sunk);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  outline: none;
+  resize: vertical;
+}
+.option-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.answer-bubble {
+  align-self: flex-end;
+  max-width: 84%;
+  padding: 9px 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--on-fill);
+  background: var(--fill);
+  border: 1px solid var(--fill-line);
+  border-radius: var(--r-md) var(--r-md) 4px var(--r-md);
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.elapsed {
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--hover);
+  border-radius: var(--r-pill);
+}
+
+.directive {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  background: var(--success-soft);
+  border: 1px solid var(--success-line);
+  border-radius: var(--r-md);
+}
+.directive-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.turn-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.foot-actions {
+  display: flex;
+  gap: var(--s2);
+}
+
+/* ================================================================
+ * Settings
+ * ================================================================ */
+
+.key-row {
+  display: flex;
+  gap: var(--s2);
+}
+.key-row .field-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.setting-group:last-of-type {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.model-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px var(--s3);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.model-line code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+/* ================================================================
+ * Toast & persistent warning
+ * ================================================================ */
+
+.toast {
+  position: fixed;
+  bottom: var(--s6);
+  left: 50%;
+  z-index: var(--z-toast);
+  max-width: min(520px, calc(100vw - 40px));
+  padding: 11px var(--s4);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-fill);
+  background: var(--fill);
+  border-radius: var(--r-md);
+  border: 1px solid var(--fill-line);
+  box-shadow: var(--shadow-3);
+  transform: translateX(-50%);
+  animation: toast-in var(--t-slow) var(--ease-out);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+/* Saving failed, or is about to. Deliberately persistent rather than a toast:
+   the user must not keep drawing in the belief that work is being kept. */
+.save-warning {
+  position: fixed;
+  bottom: var(--s6);
+  left: var(--s6);
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  max-width: 400px;
+  padding: 11px var(--s4);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--warn);
+  background: var(--surface);
+  border: 1px solid var(--warn-line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+}
+
+/* ================================================================
+ * The drawing surface
+ *
+ * Class names below are load-bearing for the camera maths in lib/camera.ts —
+ * .world's transform-origin, .ink-frame's positioning and the pointer-events
+ * chain between .backdrop, .world and .sketch-canvas all have to stay exactly
+ * as they are.
+ * ================================================================ */
+
+/* The fixed viewport onto the plane. A faint dot grid gives the pan something
+   to read against — without it an empty plane looks frozen while you drag.
 
    background-size and background-position are set INLINE from gridPattern()
-   (see lib/camera): they carry the zoom and the pan respectively, which is what
+   (lib/camera): they carry the zoom and the pan respectively, which is what
    locks the dots to world coordinates. Only the dot itself lives here. */
 .studio {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background-color: var(--paper);
-  background-image: radial-gradient(circle, rgba(28, 27, 26, 0.14) 1.1px, transparent 1.1px);
+  background-color: var(--artboard);
+  background-image: radial-gradient(circle, var(--artboard-grid) 1.1px, transparent 1.1px);
 }
 
-/* ---------- camera / world ---------- */
-
 /* The single transformed container. transform-origin MUST be 0 0 to match the
-   screenToWorld math (see lib/camera). Pointer-inert so background drags fall
-   through to the backdrop; the canvas and text items re-enable events. */
+   screenToWorld maths. Pointer-inert so background drags fall through to the
+   backdrop; the canvas and text items re-enable events. */
 .world {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: var(--z-world);
   transform-origin: 0 0;
   pointer-events: none;
   will-change: transform;
 }
 
-/* Empty-plane drag target, beneath the world. */
 .backdrop {
   position: absolute;
   inset: 0;
@@ -83,22 +1884,18 @@ body {
   position: absolute;
 }
 
-/* ---------- ink ---------- */
-
 .sketch-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   touch-action: none;
-  /* pointer-events is inherited and .world sets it to none, so make it explicit
-     here. data-tool='pan' / data-hidden below turn it back off. */
   pointer-events: auto;
 }
 
 .sketch-canvas,
 .text-layer {
-  transition: opacity 220ms ease;
+  transition: opacity var(--t-mid) var(--ease-out);
 }
 
 .sketch-canvas[data-tool='pen'] {
@@ -135,8 +1932,6 @@ body {
   pointer-events: none;
 }
 
-/* ---------- text ---------- */
-
 /* Zero-size and anchored at the world origin, so children read world coords
    1:1 and overflow freely in every direction. */
 .text-layer {
@@ -167,22 +1962,18 @@ body {
   border-bottom: 1.5px dashed currentColor;
   outline: none;
 }
-
 .text-item-editing::placeholder {
   color: currentColor;
   opacity: 0.35;
 }
 
-/* ---------- rail ---------- */
+/* ---- tool rail ---- */
 
-/* A vertical rail down the left edge. Anchored, not centred, so it does not
-   move when the window resizes. */
 .rail {
   position: fixed;
   left: 18px;
   top: 50%;
-  transform: translateY(-50%);
-  z-index: 50;
+  z-index: var(--z-chrome);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -190,8 +1981,9 @@ body {
   padding: 7px 6px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-50%);
 }
 
 .rail-group {
@@ -217,34 +2009,27 @@ body {
   background: transparent;
   border: none;
   border-radius: 10px;
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
-
 .rail-btn:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(28, 27, 26, 0.06);
+  background: var(--hover);
 }
-
-/* The active tool gets a solid ink slab - unmistakable at a glance, and the
+/* The active tool gets a solid ink slab — unmistakable at a glance, and the
    only high-contrast element on the rail. */
 .rail-btn-on,
 .rail-btn-on:hover:not(:disabled) {
-  color: var(--surface);
-  background: var(--ink);
+  color: var(--on-fill);
+  background: var(--fill);
 }
-
 .rail-btn-danger:hover:not(:disabled) {
   color: var(--danger);
-  background: rgba(217, 79, 69, 0.1);
+  background: var(--danger-soft);
 }
-
 .rail-btn:disabled {
   opacity: 0.3;
-  cursor: default;
 }
 
-/* The letter hint riding each tool button's corner. */
 .rail-key {
   position: absolute;
   right: 3px;
@@ -256,15 +2041,13 @@ body {
   pointer-events: none;
 }
 
-/* Current colour, as a rounded chip inside its button. */
 .ink-chip {
   width: 17px;
   height: 17px;
-  border-radius: 6px;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+  border-radius: var(--r-xs);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
-/* Brush size as a bare number - the visual preview lives in the flyout. */
 .rail-readout {
   display: grid;
   place-items: center;
@@ -283,39 +2066,40 @@ body {
   gap: 1px;
   width: 36px;
   padding: 5px 0;
-  font: inherit;
   font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
   background: transparent;
   border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  border-radius: var(--r-sm);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
-
 .rail-zoom:hover {
   color: var(--ink);
-  background: rgba(28, 27, 26, 0.06);
+  background: var(--hover);
 }
-
 .rail-zoom-pct {
   font-size: 8px;
   opacity: 0.6;
 }
 
-/* ---------- flyouts ---------- */
+/* ---- rail flyouts ---- */
 
-/* Both panels hang off the rail's right edge; each pins its own vertical
-   anchor so it lines up with the control that opened it. */
 .flyout {
   position: absolute;
   left: calc(100% + 9px);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+  animation: flyout-in var(--t-fast) var(--ease-out);
+}
+@keyframes flyout-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
 }
 
 /* Aligned with the eraser, the second button in the first group:
@@ -329,82 +2113,49 @@ body {
 
 .flyout-palette {
   top: 50%;
-  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 10px;
+  transform: translateY(-50%);
+  animation: none;
 }
-
-.chip {
-  padding: 4px 9px;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 120ms ease, background 120ms ease;
-}
-
-.chip:hover {
-  color: var(--ink);
-  background: rgba(28, 27, 26, 0.06);
-}
-
-.chip-on,
-.chip-on:hover {
-  color: var(--surface);
-  background: var(--ink);
-}
-
-/* ---------- palette ---------- */
 
 .swatch-grid {
   display: grid;
-  grid-template-columns: repeat(4, 22px);
-  gap: 6px;
+  grid-template-columns: repeat(4, 24px);
+  gap: 7px;
 }
 
 .swatch {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 2px solid transparent;
-  border-radius: 7px;
-  cursor: pointer;
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
-  transition: transform 120ms ease;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+  transition: transform var(--t-fast) var(--ease-out);
 }
-
 .swatch:hover {
-  transform: scale(1.12);
+  transform: scale(1.1);
 }
-
 .swatch-on {
   border-color: var(--surface);
-  box-shadow:
-    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
-    0 0 0 2px var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14), 0 0 0 2px var(--ink-soft);
 }
-
 .swatch-custom {
   display: grid;
   place-items: center;
   background: transparent;
 }
-
 .swatch-wheel {
   width: 100%;
   height: 100%;
-  border-radius: 5px;
+  border-radius: 6px;
   background: conic-gradient(#d94f45, #e0873a, #4f9d63, #4478cc, #8a63d2, #d94f45);
 }
 
-/* Kept in the layout but invisible - the swatch above triggers it, and a
-   fully hidden input can't be opened by .click() in some browsers. */
+/* Kept in the layout but invisible — the swatch above triggers it, and a fully
+   hidden input cannot be opened by .click() in some browsers. */
 .color-input {
   width: 0;
   height: 0;
@@ -414,8 +2165,6 @@ body {
   pointer-events: none;
 }
 
-/* ---------- brush ---------- */
-
 .brush-row {
   display: flex;
   align-items: center;
@@ -424,7 +2173,7 @@ body {
   border-top: 1px solid var(--line);
 }
 
-/* Fixed box so the row doesn't reflow as the dot grows. */
+/* Fixed box so the row does not reflow as the dot grows. */
 .brush-preview {
   display: grid;
   place-items: center;
@@ -432,1174 +2181,343 @@ body {
   height: 42px;
   flex: none;
 }
-
 .brush-dot {
   border-radius: 50%;
-  transition: width 120ms ease, height 120ms ease;
+  transition: width var(--t-fast) var(--ease-out), height var(--t-fast) var(--ease-out);
 }
-
 .brush-range {
   width: 96px;
   accent-color: var(--ink);
   cursor: pointer;
 }
 
-/* Fleeting size readout while w/s are tapped - bottom centre, out of the
-   drawing hand's way. */
 .brush-flash {
   position: fixed;
-  bottom: 26px;
+  bottom: 78px;
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
+  z-index: var(--z-chrome);
   padding: 6px 13px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  box-shadow: var(--shadow);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-2);
   pointer-events: none;
+  transform: translateX(-50%);
 }
 
-/* ================================================================
- * Storyboard dashboard
- * ================================================================ */
+/* ---- canvas chrome ---- */
 
-/* html/body are locked for the canvas camera, so the dashboard supplies its
-   own scroll container rather than unlocking the document. */
-.dashboard {
-  position: fixed;
-  inset: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-  padding: 22px 26px 60px;
-  background: var(--paper);
-}
-
-.app-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.app-head h1 {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-
-.app-sub,
-.detail-meta,
-.timeline-meta {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.app-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.warn-pill {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #8a5a12;
-  background: #fdf0d5;
-  border: 1px solid #efd9a8;
-  border-radius: 999px;
-}
-
-/* ---------- buttons & fields ---------- */
-
-.btn {
-  padding: 7px 13px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
-}
-.btn:hover:not(:disabled) {
-  background: rgba(28, 27, 26, 0.05);
-}
-.btn:disabled {
-  opacity: 0.42;
-  cursor: default;
-}
-.btn-primary {
-  color: var(--surface);
-  background: var(--ink);
-  border-color: var(--ink);
-}
-.btn-primary:hover:not(:disabled) {
-  background: #333130;
-}
-.btn-small {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-.btn-ghost {
-  color: var(--danger);
-  background: transparent;
-  border-color: transparent;
-}
-.btn-ghost:hover:not(:disabled) {
-  background: rgba(217, 79, 69, 0.09);
-}
-
-.icon-btn {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  font-size: 14px;
-  color: var(--muted);
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.icon-btn:hover {
-  color: var(--ink);
-  background: rgba(28, 27, 26, 0.06);
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.field-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.field-input {
-  width: 100%;
-  padding: 9px 11px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  outline: none;
-  resize: vertical;
-}
-.field-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(68, 120, 204, 0.14);
-}
-
-.hint-note {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-.hint-note code {
-  padding: 1px 4px;
-  font-size: 11px;
-  background: rgba(28, 27, 26, 0.07);
-  border-radius: 4px;
-}
-
-.empty-note {
-  max-width: 62ch;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--muted);
-}
-
-.error-note {
-  padding: 9px 12px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: #8c2f27;
-  background: rgba(217, 79, 69, 0.09);
-  border: 1px solid rgba(217, 79, 69, 0.28);
-  border-radius: 9px;
-}
-
-/* ---------- timeline ---------- */
-
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.timeline-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.timeline-head h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-/* Horizontal filmstrip; clips overflow sideways rather than wrapping, so the
-   sequence always reads as a timeline. */
-.strip {
-  display: flex;
-  align-items: stretch;
-  gap: 0;
-  padding-bottom: 8px;
-  overflow-x: auto;
-}
-
-.strip-cell {
-  display: flex;
-  align-items: center;
-  flex: none;
-}
-
-.clip-card {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  width: 306px;
-  padding: 11px;
-  background: var(--surface);
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
-}
-.clip-card:hover {
-  border-color: rgba(28, 27, 26, 0.36);
-}
-.clip-card-on {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 2px rgba(28, 27, 26, 0.16);
-}
-.clip-card-dragging {
-  opacity: 0.4;
-}
-/* Drop target while dragging another card over this one. */
-.clip-card-target {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(68, 120, 204, 0.2);
-}
-
-.clip-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.clip-index {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--surface);
-  background: var(--ink);
-  border-radius: 6px;
-}
-
-.clip-status {
-  padding: 2px 8px;
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  background: rgba(28, 27, 26, 0.06);
-  border-radius: 999px;
-}
-.clip-status-ready { color: #2f6b45; background: rgba(79, 157, 99, 0.16); }
-.clip-status-generating { color: #7a5a12; background: rgba(220, 176, 60, 0.22); }
-.clip-status-done { color: #2c5aa0; background: rgba(68, 120, 204, 0.16); }
-.clip-status-error { color: #8c2f27; background: rgba(217, 79, 69, 0.14); }
-
-.clip-grip {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--muted);
-  cursor: grab;
-  user-select: none;
-}
-
-.clip-frames {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  /* Two 122px thumbs + two 6px gaps + the 24px arrow = 280px, inside the
-     card's 284px content box. Without this the B thumb hangs over the edge. */
-  min-width: 0;
-}
-
-.frame-btn {
-  flex: none;
-  padding: 0;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  border-radius: 8px;
-}
-.frame-btn:hover .thumb {
-  border-color: var(--accent);
-}
-
-.frame-arrow {
-  font-size: 15px;
-  color: var(--muted);
-}
-
-.thumb {
-  position: relative;
-  display: block;
-  overflow: hidden;
-  background: #fff;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  transition: border-color 120ms ease;
-}
-.thumb canvas {
-  display: block;
-}
-.thumb-label {
-  position: absolute;
-  top: 4px;
-  left: 5px;
-  padding: 1px 5px;
-  font-size: 9.5px;
-  font-weight: 800;
-  color: var(--surface);
-  background: rgba(28, 27, 26, 0.62);
-  border-radius: 4px;
-}
-.thumb-empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(28, 27, 26, 0.28);
-  pointer-events: none;
-}
-
-.clip-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.board-pips {
-  display: flex;
-  gap: 3px;
-  flex: none;
-}
-.pip {
-  width: 6px;
-  height: 6px;
-  background: rgba(28, 27, 26, 0.16);
-  border-radius: 50%;
-}
-.pip-on {
-  background: var(--ink);
-}
-
-.clip-intent {
-  overflow: hidden;
-  font-size: 11.5px;
-  color: var(--muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The join between two clips. */
-.seam {
-  display: grid;
-  place-items: center;
-  width: 62px;
-  flex: none;
-}
-.seam-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 5px 6px;
-  font: inherit;
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.seam-icon {
-  font-size: 13px;
-}
-.seam-linked .seam-btn { color: #2f6b45; }
-.seam-broken .seam-btn { color: var(--danger); }
-.seam-btn:hover {
-  background: rgba(28, 27, 26, 0.06);
-}
-
-/* ---------- clip detail ---------- */
-
-.detail {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  max-width: 900px;
-  padding: 17px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-}
-
-.detail-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.detail-head h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.board-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.board-summary-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.answer-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  list-style: none;
-}
-.answer-list li {
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: 10px;
-  padding: 6px 9px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  background: rgba(28, 27, 26, 0.035);
-  border-radius: 8px;
-}
-.answer-role {
-  font-weight: 700;
-  color: var(--muted);
-}
-.answer-text i {
-  color: rgba(28, 27, 26, 0.4);
-}
-.answer-list li.answered .answer-role {
-  color: var(--ink);
-}
-
-.prompt-block {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.prompt-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.prompt-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.toggle-group {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: rgba(28, 27, 26, 0.06);
-  border-radius: 9px;
-}
-
-.prompt-text {
-  max-height: 260px;
-  padding: 12px 14px;
-  overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  background: #fbfaf8;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-
-.revise-row {
-  display: flex;
-  gap: 8px;
-}
-.revise-row .field-input {
-  flex: 1;
-}
-
-.generate-row {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding-top: 3px;
-}
-.blocker-note,
-.generating-note {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.spinner {
-  width: 15px;
-  height: 15px;
-  border: 2px solid rgba(28, 27, 26, 0.16);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: spin 700ms linear infinite;
-}
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.clip-video {
-  width: 100%;
-  max-width: 640px;
-  background: #000;
-  border-radius: 10px;
-}
-
-/* ---------- modals ---------- */
-
-.modal-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  overflow-y: auto;
-  background: rgba(28, 27, 26, 0.42);
-  backdrop-filter: blur(2px);
-}
-
-.modal {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  width: min(620px, 100%);
-  padding: 20px;
-  background: var(--surface);
-  border-radius: 16px;
-  box-shadow: 0 24px 70px rgba(28, 27, 26, 0.3);
-}
-.modal-board {
-  width: min(700px, 100%);
-}
-
-.board-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-.board-head h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  font-size: 19px;
-  font-weight: 700;
-}
-.board-eyebrow {
-  margin-bottom: 3px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.board-topic {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-/* Sequential progress rail. */
-.board-track {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  list-style: none;
-}
-.track-node {
-  display: flex;
-  align-items: center;
-}
-.track-node + .track-node::before {
-  content: '';
-  width: 42px;
-  height: 2px;
-  background: var(--line-strong);
-}
-.track-node button {
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--muted);
-  background: var(--surface);
-  border: 2px solid var(--line-strong);
-  border-radius: 50%;
-  cursor: pointer;
-}
-.track-node button:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-.track-done button {
-  color: var(--surface);
-  background: #4f9d63;
-  border-color: #4f9d63;
-}
-.track-now button {
-  color: var(--surface);
-  background: var(--ink);
-  border-color: var(--ink);
-}
-
-.board-objective {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--muted);
-}
-.board-question {
-  font-size: 16px;
-  font-weight: 650;
-  line-height: 1.45;
-}
-
-.board-options {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.option {
-  display: flex;
-  gap: 11px;
-  width: 100%;
-  padding: 12px 13px;
-  font: inherit;
-  font-size: 13.5px;
-  line-height: 1.5;
-  text-align: left;
-  color: var(--ink);
-  background: var(--surface);
-  border: 1.5px solid var(--line-strong);
-  border-radius: 11px;
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
-}
-.option:hover {
-  border-color: rgba(28, 27, 26, 0.4);
-}
-.option-on {
-  border-color: var(--ink);
-  background: rgba(28, 27, 26, 0.045);
-}
-
-.option-key {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  font-size: 11.5px;
-  font-weight: 800;
-  color: var(--muted);
-  background: rgba(28, 27, 26, 0.07);
-  border-radius: 6px;
-}
-.option-on .option-key {
-  color: var(--surface);
-  background: var(--ink);
-}
-
-.option-custom {
-  flex-direction: column;
-  gap: 9px;
-  cursor: default;
-}
-.option-hit {
-  display: flex;
-  gap: 11px;
-  padding: 0;
-  font: inherit;
-  font-size: 13.5px;
-  text-align: left;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-}
-.option-input {
-  width: 100%;
-  padding: 8px 10px;
-  font: inherit;
-  font-size: 13px;
-  background: #fbfaf8;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  outline: none;
-  resize: vertical;
-}
-.option-input:focus {
-  border-color: var(--accent);
-}
-
-.board-foot {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.key-row {
-  display: flex;
-  gap: 8px;
-}
-.key-row .field-input {
-  flex: 1;
-}
-
-/* ---------- canvas chrome (full-screen frame editor) ---------- */
-
-.canvas-header {
+.canvas-bar {
   position: fixed;
   top: 16px;
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
+  z-index: var(--z-chrome);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s2);
   padding: 7px 9px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  transform: translateX(-50%);
 }
 
-.frame-switch {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  background: rgba(28, 27, 26, 0.06);
-  border-radius: 9px;
-}
-
-.canvas-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-right: 4px;
-  font-size: 12px;
+.canvas-clip {
+  padding: 0 var(--s2) 0 var(--s1);
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+.canvas-bar-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
 }
 
 .shared-badge {
-  padding: 2px 8px;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #2c5aa0;
-  background: rgba(68, 120, 204, 0.14);
-  border-radius: 999px;
-}
-
-.ghost-toggle {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
-  padding: 6px 13px;
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-}
-.ghost-toggle-on {
-  color: var(--ink);
-  border-color: var(--line-strong);
-}
-
-/* ---------- toast ---------- */
-
-.toast {
-  position: fixed;
-  bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 200;
-  max-width: min(560px, calc(100vw - 40px));
-  padding: 10px 16px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--surface);
-  background: var(--ink);
-  border-radius: 10px;
-  box-shadow: 0 12px 34px rgba(28, 27, 26, 0.3);
-}
-
-/* ---------- board conversation ---------- */
-
-/* The thread scrolls; the header, track and footer stay put, so a long
-   consultation never pushes the controls off-screen. */
-.board-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  max-height: min(52vh, 520px);
-  padding-right: 4px;
-  overflow-y: auto;
-}
-
-.exchange {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.exchange + .exchange {
-  padding-top: 16px;
-  border-top: 1px dashed var(--line-strong);
-}
-
-.agent-badge {
-  display: inline-block;
-  margin-right: 8px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--surface);
-  background: var(--ink);
-  border-radius: 999px;
-  vertical-align: 1px;
-}
-.agent-badge-done {
-  background: #4f9d63;
-}
-
-/* What the agent says it can see. Kept visually quieter than the question so
-   the question still reads as the thing to answer. */
-.agent-observation {
-  padding: 10px 12px;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--muted);
-  background: rgba(28, 27, 26, 0.04);
-  border-radius: 10px;
-}
-
-.agent-question {
-  font-size: 15.5px;
-  font-weight: 650;
-  line-height: 1.45;
-}
-
-.user-answer {
-  align-self: flex-end;
-  max-width: 82%;
-  padding: 9px 13px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--surface);
-  background: var(--ink);
-  border-radius: 12px 12px 3px 12px;
-}
-.user-answer b {
-  opacity: 0.55;
-  margin-right: 5px;
-}
-
-.agent-thinking {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 9px;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-.agent-directive {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 12px 14px;
-  font-size: 13px;
-  line-height: 1.6;
-  background: rgba(79, 157, 99, 0.09);
-  border: 1px solid rgba(79, 157, 99, 0.32);
-  border-radius: 11px;
-}
-.agent-directive .agent-badge {
-  align-self: flex-start;
-  margin-right: 0;
-}
-
-.offline-tag {
-  margin-left: 8px;
-  padding: 2px 7px;
-  font-size: 9.5px;
-  color: #8a5a12;
-  background: #fdf0d5;
-  border: 1px solid #efd9a8;
-  border-radius: 999px;
-}
-
-.error-note .btn {
-  margin-left: 10px;
-}
-
-.turn-note {
+  gap: 4px;
+  padding: 3px 9px;
   font-size: 11.5px;
-  font-style: italic;
-  color: var(--muted);
+  font-weight: 650;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--r-pill);
 }
 
-.foot-actions {
-  display: flex;
-  gap: 8px;
-}
-
-/* Bottom-centre frame tools: onion skin + duplicate-the-other-keyframe. */
+/* Bottom-centre frame tools: onion skin, and copy the other keyframe in. */
 .frame-tools {
   position: fixed;
   bottom: 22px;
   left: 50%;
-  transform: translateX(-50%);
-  z-index: 50;
+  z-index: var(--z-chrome);
   display: flex;
   gap: 6px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-2);
+  transform: translateX(-50%);
 }
 
-/* .ghost-toggle keeps its own look but no longer positions itself - the
-   wrapper above does that now. */
-.frame-tools .ghost-toggle {
-  position: static;
-  transform: none;
-}
-
-.ghost-toggle:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ghost-count {
-  margin-left: 6px;
-  padding: 1px 6px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--surface);
-  background: var(--ink);
-  border-radius: 999px;
-}
-
-/* The A→B arrow is also the duplicate button. */
-.frame-arrow {
-  position: relative;
-  display: flex;
-  flex: none;
-  flex-direction: column;
+.tool-pill {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  padding: 6px 0;
-  font: inherit;
-  font-size: 15px;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 13px;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--muted);
   background: transparent;
   border: none;
-  border-radius: 7px;
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
+  border-radius: var(--r-pill);
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
-.frame-arrow:hover:not(:disabled) {
+.tool-pill:hover:not(:disabled) {
   color: var(--ink);
-  background: rgba(28, 27, 26, 0.07);
+  background: var(--hover);
 }
-.frame-arrow:disabled {
-  opacity: 0.35;
-  cursor: default;
+.tool-pill-on,
+.tool-pill-on:hover {
+  color: var(--on-fill);
+  background: var(--fill);
 }
-/* Absolute so the hover label never widens the arrow column — laid out inline
-   it stole ~30px from the thumbs and pushed frame B outside the card. */
-.frame-arrow-label {
-  position: absolute;
-  top: calc(100% - 4px);
-  left: 50%;
-  transform: translateX(-50%);
-  pointer-events: none;
-  white-space: nowrap;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-.frame-arrow:hover:not(:disabled) .frame-arrow-label {
-  opacity: 1;
+.tool-pill:disabled {
+  opacity: 0.4;
 }
 
-.cost-note {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.elapsed {
-  margin-left: 8px;
-  padding: 1px 7px;
+.tool-count {
+  padding: 0 6px;
   font-size: 10.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  background: rgba(28, 27, 26, 0.07);
-  border-radius: 999px;
+  background: var(--hover);
+  border-radius: var(--r-pill);
+}
+.tool-pill-on .tool-count {
+  background: rgba(255, 255, 255, 0.22);
 }
 
-.end-mode {
+/* ================================================================
+ * Responsive
+ *
+ * The two-column workspace collapses to one below 1080px: at that width the
+ * inspector would squeeze the storyboard below a usable card width, and a
+ * cramped two-column layout is worse than an honest single one.
+ * ================================================================ */
+
+@media (max-width: 1080px) {
+  .workspace {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .lane {
+    overflow: visible;
+    padding-bottom: var(--s5);
+  }
+  .inspector {
+    overflow: visible;
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+  .welcome-steps {
+    grid-template-columns: 1fr;
+    max-width: 460px;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    padding: 0 var(--s3);
+  }
+  .lane,
+  .inspector {
+    padding: var(--s4) var(--s3) var(--s6);
+  }
+  .clip-card {
+    width: 264px;
+  }
+  .scrim {
+    padding: var(--s2);
+    place-items: end center;
+  }
+  .modal {
+    max-height: calc(100dvh - var(--s6));
+  }
+  .toast {
+    bottom: var(--s3);
+  }
+  .save-warning {
+    left: var(--s3);
+    right: var(--s3);
+    max-width: none;
+  }
+  .revise-row,
+  .key-row {
+    flex-direction: column;
+  }
+}
+
+/* ================================================================
+ * Reduced motion
+ *
+ * Everything animated above is decorative or a state hint; none of it carries
+ * information on its own, so all of it can be dropped rather than shortened.
+ * ================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* The spinner is the exception: it is the only signal that a request is
+     still running, so it keeps turning — just slower and without the snap. */
+  .spinner {
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ---------- home / board library ---------- */
+
+.home {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 12px 13px;
-  background: rgba(28, 27, 26, 0.035);
-  border-radius: 11px;
+  gap: var(--s6);
+  padding: var(--s10) var(--s8) var(--s12);
+  background: var(--paper);
 }
-.end-mode-head {
+
+/* This was never defined - the header inherited nothing, so the title and the
+   New board button sat unstyled and flush to the top edge. */
+.app-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--s4);
+  padding-bottom: var(--s2);
 }
 
-/* Saving failed, or is about to. Deliberately persistent rather than a toast:
-   the user must not keep drawing in the belief that work is being kept. */
-.save-warning {
-  position: fixed;
-  bottom: 22px;
-  left: 22px;
-  z-index: 200;
-  max-width: 420px;
-  padding: 10px 14px;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.5;
-  color: #7a2f12;
-  background: #fdf0d5;
-  border: 1px solid #e8bf86;
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(28, 27, 26, 0.2);
-}
-
-/* ---------- final cut ---------- */
-
-.final-cut {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 900px;
-  padding: 17px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: var(--shadow);
-}
-
-/* Which clip is playing, at a glance. */
-.cut-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.cut-pill {
-  display: grid;
-  place-items: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 8px;
-  font-size: 11.5px;
+.app-head h1 {
+  font-size: 21px;
   font-weight: 700;
-  color: var(--muted);
-  background: rgba(28, 27, 26, 0.06);
-  border-radius: 7px;
-  transition: color 120ms ease, background 120ms ease;
-}
-.cut-pill-on {
-  color: var(--surface);
-  background: var(--ink);
+  letter-spacing: -0.015em;
 }
 
-.cut-output {
+.home-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  gap: 14px;
+  padding: 34px 0;
 }
-.cut-output .btn {
-  text-decoration: none;
+
+.board-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(266px, 1fr));
+  gap: 16px;
+}
+
+.board-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.board-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+/* Fixed-height cover so cards line up whether or not a board has drawings. */
+.board-cover {
+  display: grid;
+  place-items: center;
+  height: 148px;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.board-cover,
+.board-cover .thumb,
+.board-cover canvas {
+  width: 100%;
+}
+.board-cover .thumb {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+}
+.board-cover canvas {
+  height: 100% !important;
+  object-fit: cover;
+}
+.board-cover-empty {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(28, 27, 26, 0.3);
+}
+
+.board-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 13px 13px;
+}
+
+.board-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-rename {
+  padding: 5px 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.board-meta {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.board-actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 3px;
+}
+
+
+/* The brand mark doubles as the way back to the library. */
+.brand-home {
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease;
+}
+.brand-home:hover {
+  transform: translateX(-2px);
 }

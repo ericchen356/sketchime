@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import { Icon, type IconName } from './Icon'
 import type { EraseMode, Tool } from '@/lib/types'
 
 /**
- * Ten swatches, keyed 1-9 and 0. Saturated enough to read on the slate ground,
+ * Ten swatches, keyed 1-9 and 0. Saturated enough to read on the paper ground,
  * ink first because it is the default.
  */
 export const PALETTE = [
@@ -20,16 +21,22 @@ export const PALETTE = [
   { name: 'magenta', value: '#c85b96' }
 ] as const
 
-const TOOLS: { tool: Tool; key: string; title: string }[] = [
-  { tool: 'pen', key: 'd', title: 'Draw (d)' },
-  { tool: 'eraser', key: 'e', title: 'Erase — press e again to switch mode' },
-  { tool: 'text', key: 't', title: 'Text, click to place (t)' },
-  { tool: 'pan', key: 'm', title: 'Pan the canvas (m)' }
+const TOOLS: { tool: Tool; icon: IconName; key: string; label: string; hint: string }[] = [
+  { tool: 'pen', icon: 'pen', key: 'd', label: 'Draw', hint: 'Draw (d)' },
+  {
+    tool: 'eraser',
+    icon: 'eraser',
+    key: 'e',
+    label: 'Erase',
+    hint: 'Erase — press e again to switch between rubbing out whole lines and parts of them'
+  },
+  { tool: 'text', icon: 'text', key: 't', label: 'Add text', hint: 'Add text, click to place (t)' },
+  { tool: 'pan', icon: 'hand', key: 'm', label: 'Move around', hint: 'Move around the page (m)' }
 ]
 
 const ERASE_MODES: { mode: EraseMode; label: string; title: string }[] = [
-  { mode: 'stroke', label: 'stroke', title: 'Remove a whole stroke at a time' },
-  { mode: 'pixel', label: 'pixel', title: 'Rub out part of a stroke, splitting it' }
+  { mode: 'stroke', label: 'Whole line', title: 'Rub out an entire line at a time' },
+  { mode: 'pixel', label: 'Part of a line', title: 'Rub out only what you touch, splitting the line' }
 ]
 
 interface Props {
@@ -91,25 +98,21 @@ export function Rail({
   }, [paletteOpen, onClosePalette])
 
   return (
-    <div className="rail" ref={rail}>
+    <div className="rail" ref={rail} role="toolbar" aria-label="Drawing tools" aria-orientation="vertical">
       <div className="rail-group">
-        {TOOLS.map(({ tool: t, key, title }) => (
+        {TOOLS.map(({ tool: t, icon, key, label, hint }) => (
           <button
             key={t}
             className={`rail-btn ${tool === t ? 'rail-btn-on' : ''}`}
             onClick={() => onTool(t)}
-            title={title}
+            title={hint}
+            aria-label={label}
+            aria-pressed={tool === t}
           >
-            {t === 'pen' ? (
-              <PenIcon />
-            ) : t === 'eraser' ? (
-              <EraserIcon />
-            ) : t === 'text' ? (
-              <TextIcon />
-            ) : (
-              <HandIcon />
-            )}
-            <span className="rail-key">{key}</span>
+            <Icon name={icon} />
+            <span className="rail-key" aria-hidden="true">
+              {key}
+            </span>
           </button>
         ))}
       </div>
@@ -120,11 +123,13 @@ export function Rail({
         <button
           className={`rail-btn ${paletteOpen ? 'rail-btn-on' : ''}`}
           onClick={onTogglePalette}
-          title="Colour & brush (c)"
+          title="Colour and brush size (c)"
+          aria-label="Colour and brush size"
+          aria-expanded={paletteOpen}
         >
           <span className="ink-chip" style={{ background: color }} />
         </button>
-        <span className="rail-readout" title="Brush size — w bigger, s smaller">
+        <span className="rail-readout" title="Brush size — w for bigger, s for smaller">
           {brushSize}
         </span>
       </div>
@@ -132,36 +137,51 @@ export function Rail({
       <span className="rail-sep" />
 
       <div className="rail-group">
-        <button className="rail-btn" onClick={onUndo} disabled={!canUndo} title="Undo (⌘/ctrl+Z)">
-          <UndoIcon />
+        <button
+          className="rail-btn"
+          onClick={onUndo}
+          disabled={!canUndo}
+          title="Undo (⌘/ctrl+Z)"
+          aria-label="Undo"
+        >
+          <Icon name="undo" />
         </button>
         <button
           className="rail-btn rail-btn-danger"
           onClick={onClear}
           disabled={isEmpty}
-          title="Clear the canvas"
+          title="Clear this frame — undo brings it back"
+          aria-label="Clear this frame"
         >
-          <TrashIcon />
+          <Icon name="trash" />
         </button>
       </div>
 
       <span className="rail-sep" />
 
-      <button className="rail-zoom" onClick={onFit} title="Fit the drawing to the screen (0)">
+      <button
+        className="rail-zoom"
+        onClick={onFit}
+        title="Fit the drawing to the screen (0)"
+        aria-label={`Zoom ${Math.round(zoom * 100)} percent. Click to fit the drawing to the screen.`}
+      >
         {Math.round(zoom * 100)}
-        <span className="rail-zoom-pct">%</span>
+        <span className="rail-zoom-pct" aria-hidden="true">
+          %
+        </span>
       </button>
 
       {/* Eraser mode picker — only meaningful while the eraser is up, so it
           only exists then. Sits beside the eraser button. */}
       {tool === 'eraser' && (
-        <div className="flyout flyout-erase">
+        <div className="flyout flyout-erase" role="group" aria-label="What the eraser removes">
           {ERASE_MODES.map(({ mode, label, title }) => (
             <button
               key={mode}
               className={`chip ${eraseMode === mode ? 'chip-on' : ''}`}
               onClick={() => onEraseMode(mode)}
               title={title}
+              aria-pressed={eraseMode === mode}
             >
               {label}
             </button>
@@ -170,7 +190,7 @@ export function Rail({
       )}
 
       {paletteOpen && (
-        <div className="flyout flyout-palette">
+        <div className="flyout flyout-palette" role="group" aria-label="Colour and brush size">
           <div className="swatch-grid">
             {PALETTE.map((p, i) => (
               <button
@@ -179,6 +199,8 @@ export function Rail({
                 style={{ background: p.value }}
                 onClick={() => onColor(p.value)}
                 title={`${p.name} (${(i + 1) % 10})`}
+                aria-label={p.name}
+                aria-pressed={color.toLowerCase() === p.value.toLowerCase()}
               />
             ))}
             {/* The native picker is the input itself - the swatch just opens it. */}
@@ -186,7 +208,8 @@ export function Rail({
               className={`swatch swatch-custom ${isCustom ? 'swatch-on' : ''}`}
               style={isCustom ? { background: color } : undefined}
               onClick={() => picker.current?.click()}
-              title="Custom colour"
+              title="Any other colour"
+              aria-label="Pick any other colour"
             >
               {!isCustom && <span className="swatch-wheel" />}
             </button>
@@ -197,6 +220,7 @@ export function Rail({
               value={color}
               onChange={(e) => onColor(e.target.value)}
               aria-label="Custom colour"
+              tabIndex={-1}
             />
           </div>
 
@@ -221,105 +245,5 @@ export function Rail({
         </div>
       )}
     </div>
-  )
-}
-
-function PenIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <path
-        d="M13.4 3.6l3 3L7.9 15.1l-3.9.9.9-3.9z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M11.9 5.1l3 3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  )
-}
-
-function EraserIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <rect
-        x="3.4"
-        y="7.6"
-        width="12"
-        height="7"
-        rx="1.6"
-        transform="rotate(-40 9.4 11.1)"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-      <path d="M6 16.5h10.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function TextIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <path
-        d="M4.5 5.5V4h11v1.5M10 4v12M7.5 16h5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function HandIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <path
-        d="M10 3.2v7M7.4 5v5.2M12.6 5.2v5M15 7.6v4.2a5 5 0 0 1-5 5 5 5 0 0 1-5-5V9"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-function UndoIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <path
-        d="M6.5 7.5H12a4 4 0 0 1 0 8H7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M9 4.5l-3.2 3L9 10.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function TrashIcon(): React.JSX.Element {
-  return (
-    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
-      <path
-        d="M4.5 6h11M8 6V4.4h4V6M6 6l.7 9.2a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   )
 }

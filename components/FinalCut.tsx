@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Icon } from './Icon'
 import { canStitch, stitchClips, type StitchProgress } from '@/lib/stitch'
 import { CLIP_SECONDS, type Storyboard } from '@/lib/types'
 
@@ -9,7 +10,7 @@ interface Props {
 }
 
 /**
- * The finished sequence: watch the clips back to back, or export them as one
+ * The finished sequence: watch the clips back to back, or save them as one
  * file.
  *
  * Preview and export are deliberately separate. Previewing is instant and
@@ -106,31 +107,33 @@ export function FinalCut({ storyboard }: Props): React.JSX.Element | null {
   const supported = canStitch()
 
   return (
-    <section className="final-cut">
-      <header className="detail-head">
+    <section className="card">
+      <header className="section-head">
         <h2>
-          Final cut
-          <span className="detail-meta">
+          <Icon name="film" size={17} />
+          The whole thing
+          <span className="section-meta">
             {rendered.length} of {storyboard.clips.length} clip
-            {storyboard.clips.length === 1 ? '' : 's'} rendered · {totalSeconds}s
+            {storyboard.clips.length === 1 ? '' : 's'} ready · {totalSeconds}s
           </span>
         </h2>
       </header>
 
       {rendered.length === 0 ? (
-        <p className="empty-note">
-          Nothing to join yet — render at least one clip and it will appear here.
+        <p className="empty">
+          Nothing to watch yet. Make your first clip above and it will show up here, ready to play
+          end to end.
         </p>
       ) : (
         <>
           {missing > 0 && (
-            <p className="hint-note">
-              {missing} clip{missing === 1 ? '' : 's'} not rendered yet and will be skipped. The
-              sequence follows your timeline order.
+            <p className="field-hint">
+              {missing} clip{missing === 1 ? '' : 's'} not made yet, so {missing === 1 ? 'it' : 'they'}{' '}
+              will be skipped. The order follows your storyboard.
             </p>
           )}
 
-          <div className="cut-strip">
+          <div className="cut-pills">
             {rendered.map((c, i) => {
               const n = storyboard.clips.findIndex((x) => x.id === c.id) + 1
               return (
@@ -155,25 +158,26 @@ export function FinalCut({ storyboard }: Props): React.JSX.Element | null {
             onEnded={() => playFrom(index + 1)}
           />
 
-          <div className="generate-row">
+          <div className="cta-row">
             <button className="btn" onClick={startPreview} disabled={playing}>
-              {playing ? `Playing clip ${index + 1}…` : '▶ Play sequence'}
+              <Icon name="play" size={15} />
+              {playing ? `Playing clip ${index + 1}…` : 'Play it all'}
             </button>
 
             {progress ? (
               <>
                 <span className="spinner" aria-hidden="true" />
-                <span className="generating-note">
-                  Joining clip {progress.current + 1} of {progress.total} — this runs in real time,
-                  so it takes about {totalSeconds}s.
+                <span className="cta-note" aria-live="polite">
+                  Joining clip {progress.current + 1} of {progress.total} — this happens in real
+                  time, so give it about {totalSeconds} seconds.
                 </span>
                 <button
-                  className="btn"
+                  className="btn btn-small"
                   onClick={() => {
                     cancelled.current = true
                   }}
                 >
-                  Cancel
+                  Stop
                 </button>
               </>
             ) : (
@@ -183,34 +187,45 @@ export function FinalCut({ storyboard }: Props): React.JSX.Element | null {
                 disabled={!supported}
                 title={
                   supported
-                    ? 'Join every rendered clip into one downloadable file'
+                    ? 'Join every finished clip into one file you can save'
                     : 'This browser cannot record video'
                 }
               >
-                {output ? 'Rebuild single file' : 'Export single file'}
+                <Icon name="download" size={15} />
+                {output ? 'Build it again' : 'Save as one video'}
               </button>
             )}
           </div>
 
           {!supported && (
-            <p className="hint-note">
-              This browser has no MediaRecorder support, so clips can be previewed but not exported.
-              Chrome or Edge will work.
+            <p className="notice notice-warn">
+              <Icon name="alert" size={16} />
+              This browser cannot record video, so clips can be watched here but not saved as one
+              file. Chrome or Edge will work.
             </p>
           )}
 
-          {error && <p className="error-note">{error}</p>}
+          {error && (
+            <p className="notice notice-error">
+              <Icon name="alert" size={16} />
+              {error}
+            </p>
+          )}
 
           {output && (
-            <div className="cut-output">
+            <div className="cut-out">
               <video className="clip-video" src={output.url} controls loop playsInline />
-              <a className="btn btn-primary" href={output.url} download={`sketchime.${output.extension}`}>
-                Download .{output.extension} ({(output.bytes / 1_000_000).toFixed(1)} MB)
+              <a
+                className="btn btn-primary"
+                href={output.url}
+                download={`sketchime.${output.extension}`}
+              >
+                <Icon name="download" size={15} />
+                Download ({(output.bytes / 1_000_000).toFixed(1)} MB)
               </a>
-              <p className="hint-note">
-                Re-encoded from the individual clips, so quality is slightly below the originals.
-                Like everything else here, it is lost on reload — download it if you want to keep
-                it.
+              <p className="field-hint">
+                Re-encoded from the individual clips, so it is very slightly softer than the
+                originals.
               </p>
             </div>
           )}

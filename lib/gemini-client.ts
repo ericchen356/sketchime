@@ -105,11 +105,13 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 /**
  * Full generation lifecycle: start, poll to completion, then pull the bytes
- * through our proxy and hand back a blob URL the <video> tag can play.
+ * through our proxy.
  *
- * The caller owns the returned URL and must revokeObjectURL it when done.
+ * Returns the BLOB, not just an object URL: the caller needs the bytes to
+ * persist the video, and an object URL cannot be turned back into them once the
+ * page reloads. The caller creates (and revokes) its own URL.
  */
-export async function generateClip(input: GenerateInput): Promise<string> {
+export async function generateClip(input: GenerateInput): Promise<Blob> {
   const started = await postJson<{
     kind?: 'operation' | 'uri' | 'inline'
     operation?: string
@@ -127,7 +129,7 @@ export async function generateClip(input: GenerateInput): Promise<string> {
   // Omni Flash renders synchronously, so the video may already be here and
   // there is nothing to poll for.
   if (started.kind === 'inline' && started.data) {
-    return URL.createObjectURL(base64ToBlob(started.data, started.mimeType ?? 'video/mp4'))
+    return base64ToBlob(started.data, started.mimeType ?? 'video/mp4')
   }
   if (started.kind === 'uri' && started.uri) {
     return fetchVideoBlob(started.uri, input.apiKey)
@@ -175,7 +177,7 @@ function base64ToBlob(data: string, mimeType: string): Blob {
 
 /** Pull the finished video through our proxy - the download URL needs the API
  * key, which must not reach the browser. */
-async function fetchVideoBlob(uri: string, apiKey: string): Promise<string> {
+async function fetchVideoBlob(uri: string, apiKey: string): Promise<Blob> {
   const res = await fetch('/api/veo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -185,7 +187,7 @@ async function fetchVideoBlob(uri: string, apiKey: string): Promise<string> {
     const msg = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(msg.error || `Video download failed (${res.status}).`)
   }
-  return URL.createObjectURL(await res.blob())
+  return res.blob()
 }
 
 /* ---------- board agents ---------- */
@@ -201,6 +203,8 @@ export interface BoardTurnPayload {
   imageB: string
   history: { question: string; answer: string }[]
   defaultDirective: string
+  probes: string[]
+  minTurns: number
   turnsRemaining: number
   /** Forbid another question; the agent must commit this turn. */
   mustCommit?: boolean

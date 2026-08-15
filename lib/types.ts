@@ -86,6 +86,12 @@ export interface BoardStep {
   question: string
   options: BoardOption[]
   /**
+   * Distinct facets of this member's remit. The agent is told to work through
+   * them across its questions, which is what turns "one vague question" into a
+   * genuine interrogation of the shot.
+   */
+  probes: string[]
+  /**
    * Safe, neutral instruction used when an agent commits without producing a
    * directive. It must read as a DIRECTION, never as a question - anything put
    * here is inserted verbatim into the prompt sent to the video model.
@@ -134,9 +140,17 @@ export interface BoardThread {
 
 export type BoardThreads = Partial<Record<BoardStepId, BoardThread>>
 
+/**
+ * Each board member must ask at least this many questions before it is allowed
+ * to commit. Without a floor the agents assume: they glance at the frames,
+ * decide they understand the shot, and write a directive built on guesses the
+ * user never confirmed. The point of the board is that nothing is assumed.
+ */
+export const MIN_TURNS_PER_AGENT = 3
+
 /** Hard stop on the follow-up loop. An agent that hasn't converged by now is
  * stuck, and the user should not be trapped answering forever. */
-export const MAX_TURNS_PER_AGENT = 4
+export const MAX_TURNS_PER_AGENT = 5
 
 /**
  * How the End Frame is used.

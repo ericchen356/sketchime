@@ -21,10 +21,58 @@ export const SAVE_DEBOUNCE_MS = 700
 /** Browsers typically allow ~5MB per origin. Warn before hitting the wall. */
 const WARN_BYTES = 3_500_000
 
-interface Persisted {
+export interface Persisted {
   version: number
   savedAt: string
   storyboard: Storyboard
+}
+
+/** Wrap a storyboard for storage: strips transient fields, rounds coordinates. */
+export function packStoryboard(sb: Storyboard): Persisted {
+  return {
+    version: VERSION,
+    savedAt: new Date().toISOString(),
+    storyboard: {
+      ...sb,
+      clips: sb.clips.map(strip),
+      frames: Object.fromEntries(
+        Object.entries(sb.frames).map(([id, f]) => [id, { ...f, sketch: packSketch(f.sketch) }])
+      )
+    }
+  }
+}
+
+/**
+ * Read a stored payload back, defensively. Anything malformed is dropped rather
+ * than trusted: this data has sat in a browser across app versions, and a crash
+ * on load would lock someone out of their own work with no way back.
+ */
+export function unpackStoryboard(parsed: unknown): Storyboard | null {
+  const p = parsed as Persisted
+  if (!p || p.version !== VERSION) return null
+
+  const sb = p.storyboard
+  if (!sb || typeof sb !== 'object' || !Array.isArray(sb.clips) || !sb.frames) return null
+
+  const frames: Record<string, Frame> = {}
+  for (const [id, f] of Object.entries(sb.frames)) {
+    if (f && typeof f === 'object' && isSketch((f as Frame).sketch)) {
+      frames[id] = { id, sketch: (f as Frame).sketch }
+    }
+  }
+
+  // A clip pointing at a frame that failed validation would render as an empty
+  // keyframe with no way to tell why, so drop it instead.
+  const clips = sb.clips.filter(
+    (c): c is Clip =>
+      !!c && typeof c.id === 'string' && !!frames[c.startFrameId] && !!frames[c.endFrameId]
+  )
+
+  return {
+    frames,
+    clips: clips.map(strip),
+    styleNote: typeof sb.styleNote === 'string' ? sb.styleNote : ''
+  }
 }
 
 /** Coordinates are stored to 2dp. Sub-pixel precision is invisible and the
@@ -73,17 +121,7 @@ export interface SaveResult {
 export function saveStoryboard(sb: Storyboard): SaveResult {
   if (typeof window === 'undefined') return { ok: false }
 
-  const payload: Persisted = {
-    version: VERSION,
-    savedAt: new Date().toISOString(),
-    storyboard: {
-      ...sb,
-      clips: sb.clips.map(strip),
-      frames: Object.fromEntries(
-        Object.entries(sb.frames).map(([id, f]) => [id, { ...f, sketch: packSketch(f.sketch) }])
-      )
-    }
-  }
+  const payload = packStoryboard(sb)
 
   let json: string
   try {
@@ -134,38 +172,10 @@ export function loadStoryboard(): Storyboard | null {
   }
   if (!raw) return null
 
-  let parsed: Persisted
   try {
-    parsed = JSON.parse(raw) as Persisted
+    return unpackStoryboard(JSON.parse(raw))
   } catch {
     return null
-  }
-  if (!parsed || parsed.version !== VERSION) return null
-
-  const sb = parsed.storyboard
-  if (!sb || typeof sb !== 'object' || !Array.isArray(sb.clips) || !sb.frames) return null
-
-  const frames: Record<string, Frame> = {}
-  for (const [id, f] of Object.entries(sb.frames)) {
-    if (f && typeof f === 'object' && isSketch((f as Frame).sketch)) {
-      frames[id] = { id, sketch: (f as Frame).sketch }
-    }
-  }
-
-  // A clip pointing at a frame that failed validation would render as an empty
-  // keyframe with no way to tell why, so drop it instead.
-  const clips = sb.clips.filter(
-    (c): c is Clip =>
-      !!c &&
-      typeof c.id === 'string' &&
-      !!frames[c.startFrameId] &&
-      !!frames[c.endFrameId]
-  )
-
-  return {
-    frames,
-    clips: clips.map(strip),
-    styleNote: typeof sb.styleNote === 'string' ? sb.styleNote : ''
   }
 }
 

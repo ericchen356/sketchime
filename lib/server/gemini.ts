@@ -515,6 +515,10 @@ export interface BoardTurnRequest {
   imageB: string
   /** Prior exchanges in this agent's thread, oldest first. */
   history: { question: string; answer: string }[]
+  /** Facets of the remit this member should work through. */
+  probes: string[]
+  /** Questions it must ask before it may commit. */
+  minTurns: number
   /** Safe instruction to fall back on. NEVER the brief question - see below. */
   defaultDirective: string
   turnsRemaining: number
@@ -577,6 +581,42 @@ export async function boardTurn(
   req: BoardTurnRequest,
   key: string
 ): Promise<BoardTurnResponse> {
+  const first = await boardTurnOnce(req, key)
+
+  /**
+   * Enforce the question floor. The prompt asks for it; that is not enough -
+   * the same class of instruction was already shown not to hold when the cap
+   * was advisory. An agent that commits early has, by definition, decided
+   * something the user never told it.
+   *
+   * One retry only: if it insists twice, take the directive rather than trap
+   * the user in a loop.
+   */
+  if (
+    !req.mustCommit &&
+    first.satisfied &&
+    req.history.length < req.minTurns
+  ) {
+    console.warn(
+      `[board] ${req.role} tried to commit after ${req.history.length}/${req.minTurns} questions; pushing back`
+    )
+    const pushed = await boardTurnOnce(
+      {
+        ...req,
+        extraInstruction: `You attempted to finish after only ${req.history.length} question(s). That is not enough — you would be assuming things the user has not told you. Ask your next question now, about a facet you have NOT yet covered. Do not set satisfied=true.`
+      },
+      key
+    )
+    if (!pushed.satisfied) return pushed
+  }
+
+  return first
+}
+
+async function boardTurnOnce(
+  req: BoardTurnRequest & { extraInstruction?: string },
+  key: string
+): Promise<BoardTurnResponse> {
   const transcript = req.history.length
     ? req.history.map((h, i) => `Q${i + 1}: ${h.question}\nUser: ${h.answer}`).join('\n\n')
     : '(no questions asked yet)'
@@ -593,23 +633,31 @@ The drawing style: ${req.styleNote.trim() || '(raw hand-drawn sketch)'}
 Conversation so far with the user:
 ${transcript}
 
+Facets of your remit to work through, one per question, in whatever order suits the shot:
+${req.probes.map((p) => `- ${p}`).join('\n')}
+
 ${
     req.mustCommit
       ? 'THIS IS YOUR FINAL TURN. Do NOT ask another question. Set satisfied=true and write your directive now, using your best reading of the answers above.'
-      : `You have ${req.turnsRemaining} question(s) left before you MUST commit.`
+      : `You have asked ${req.history.length} question(s). You MUST ask at least ${req.minTurns} before you are allowed to set satisfied=true, and you may ask up to ${req.history.length + req.turnsRemaining}.`
   }
 
 HOW TO WORK:
 - Look at the two images first. "observation" must cite something concrete and specific you can actually see in them (a subject, a pose change, a position shift, a scale change, what is drawn in one frame but not the other). Never write a generic observation that would fit any drawing.
-- PREFER TO COMMIT. Your default is to ask one good question and then decide. Ask a follow-up ONLY when the answer so far leaves your remit genuinely undecidable — not to confirm, refine, or explore a detail you could reasonably choose yourself. A director who keeps asking is wasting the user's time.
-- If you do still need information, set satisfied=false and ask ONE question, with EXACTLY THREE options keyed "A", "B", "C". The options must be written for THIS drawing — name what you see in them. Never offer generic textbook choices.
+- ASSUME NOTHING. Every creative decision inside your remit must come from the user, not from you. If you find yourself thinking "they probably want X", that is a question you have not asked yet.
+- Ask ONE question per turn, with EXACTLY THREE options keyed "A", "B", "C", and set satisfied=false.
+- Questions must be SPECIFIC and grounded in this drawing. Name the actual thing you can see — the subject, the limb, the object, the part of frame. "How should the camera react?" is worthless; "The player is on the left and the goal is on the right — should the camera hold wide so both stay in frame, or track him rightward?" is a real question.
+- Options must be concrete alternatives that would visibly differ on screen, and mutually exclusive. Never offer vague or overlapping choices, and never repeat an option the user already rejected.
+- Work through your listed facets. Each new question should open a DIFFERENT facet rather than re-asking the same one in other words.
 - Do not ask about anything outside your remit; another board member covers it.
 - Do not re-ask something the user already answered above.
-- If the answers so far are enough, or you have 1 turn left, set satisfied=true and write "directive".
+- Only once you have asked at least ${req.minTurns} questions AND genuinely have no remaining ambiguity in your remit may you set satisfied=true and write "directive".
 - "directive" is one or two imperative sentences telling a video model exactly how to handle your remit for this shot. Reference what is actually in the frames. It is inserted verbatim into a prompt, so no preamble, no markdown, no mention of the user or this conversation.
 - Never propose 3D, photorealism, relighting, shading or gradients. The output stays flat 2D hand-drawn line art.
 
-Answer as JSON matching the schema. When satisfied=true, omit question and options. When satisfied=false, omit directive.`
+Answer as JSON matching the schema. When satisfied=true, omit question and options. When satisfied=false, omit directive.${
+    req.extraInstruction ? `\n\n${req.extraInstruction}` : ''
+  }`
 
   const json = (await withModel(key, 'text', (model) =>
     call(`/models/${model}:generateContent`, key, {

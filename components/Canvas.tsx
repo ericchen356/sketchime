@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SketchLayer } from './SketchLayer'
 import { PALETTE, Rail } from './Rail'
+import { Icon } from './Icon'
 import {
   fitCamera,
   gridPattern,
@@ -299,6 +300,22 @@ export function Canvas({
     setCamera(next ?? { x: 0, y: 0, zoom: 1 })
   }, [])
 
+  /**
+   * Frame the existing drawing when the surface first opens.
+   *
+   * The camera starts at the world origin, and a frame drawn anywhere else
+   * opens on blank paper with the work off-screen — indistinguishable from
+   * having lost it. Runs once per mount, gated on the first real viewport
+   * measurement, so switching between the two keyframes of a clip (which keeps
+   * this component mounted) leaves the camera exactly where the user put it.
+   */
+  const didFit = useRef(false)
+  useEffect(() => {
+    if (didFit.current || viewport.w === 0) return
+    didFit.current = true
+    if (!isEmpty(sketchRef.current)) fitToContent()
+  }, [viewport.w, fitToContent])
+
   // Free 2D pan replaces native scroll; ctrl/meta+wheel (and trackpad pinch,
   // which arrives as ctrl+wheel) zooms about the cursor. rAF-throttled so a
   // high-rate trackpad can't outpace the compositor.
@@ -532,20 +549,23 @@ export function Canvas({
       {ghost && (
         <div className="frame-tools">
           <button
-            className={`ghost-toggle ${showGhost ? 'ghost-toggle-on' : ''}`}
+            className={`tool-pill ${showGhost ? 'tool-pill-on' : ''}`}
             onClick={() => setShowGhost((v) => !v)}
-            title="Onion skin: show the clip's other keyframe (g)"
+            title={`Show ${ghostLabel ?? 'the other frame'} faintly underneath, so you can line this one up against it (g)`}
+            aria-pressed={showGhost}
           >
-            onion skin {showGhost ? 'on' : 'off'}
+            <Icon name="onion" size={15} />
+            Show {ghostLabel ?? 'the other frame'}
           </button>
           <button
-            className="ghost-toggle"
+            className="tool-pill"
             onClick={copyGhost}
             disabled={ghostStrokes === 0 && ghostTexts === 0}
-            title={`Duplicate every stroke from ${ghostLabel ?? 'the other keyframe'} into this frame, then move what changes (shift+D). Undoable.`}
+            title={`Copy everything from ${ghostLabel ?? 'the other frame'} onto this one, then move what changes (shift+D). Undo takes it back out.`}
           >
-            copy {ghostLabel ?? 'other frame'}
-            {ghostStrokes > 0 && <span className="ghost-count">{ghostStrokes}</span>}
+            <Icon name="copy" size={15} />
+            Copy it in
+            {ghostStrokes > 0 && <span className="tool-count">{ghostStrokes}</span>}
           </button>
         </div>
       )}

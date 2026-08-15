@@ -7,6 +7,8 @@ import { BoardSurvey } from './BoardSurvey'
 import { ClipDetail } from './ClipDetail'
 import { FinalCut } from './FinalCut'
 import { SettingsDialog } from './SettingsDialog'
+import { ConfirmDialog, type Confirmation } from './ConfirmDialog'
+import { Icon } from './Icon'
 import { compilePrompt, revisionInstruction } from '@/lib/compile'
 import { BOARD_H, BOARD_W, renderClipFrames } from '@/lib/render'
 import { isEmpty } from '@/lib/ink'
@@ -35,12 +37,17 @@ import {
   unlinkSeam,
   updateClip
 } from '@/lib/storyboard'
+import { SAVE_DEBOUNCE_MS } from '@/lib/persist'
+import { allClipIds, boardMeta, deleteBoard, loadBoard, saveBoard } from '@/lib/boards'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
-  clearStoryboard,
-  loadStoryboard,
-  saveStoryboard,
-  SAVE_DEBOUNCE_MS
-} from '@/lib/persist'
+  clearVideos,
+  deleteVideo,
+  getVideo,
+  pruneVideos,
+  putVideo
+} from '@/lib/videoStore'
 import type { BoardThreads, Sketch, Storyboard } from '@/lib/types'
 
 /** Which frame the full-screen canvas is editing, if any. */
@@ -49,14 +56,21 @@ interface Editing {
   side: 'start' | 'end'
 }
 
-export function Studio(): React.JSX.Element {
+interface Props {
+  /** Which board to edit. Also its localStorage key. */
+  boardId: string
+}
+
+export function Studio({ boardId }: Props): React.JSX.Element {
   const [storyboard, setStoryboard] = useState<Storyboard>(emptyStoryboard)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Editing | null>(null)
   const [boardFor, setBoardFor] = useState<string | null>(null)
-  /** The rendered keyframes the board is currently looking at. */
+  /** The rendered keyframes the crew is currently looking at. */
   const [boardImages, setBoardImages] = useState<{ imageA: string; imageB: string } | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  /** The one pending "are you sure", if any. */
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [config, setConfig] = useState<ServerConfig | null>(null)
   const [busy, setBusy] = useState(false)
@@ -68,6 +82,8 @@ export function Studio(): React.JSX.Element {
    * work we are trying to restore. So saving is gated on this flag.
    */
   const [restored, setRestored] = useState(false)
+  const [boardName, setBoardName] = useState('')
+  const router = useRouter()
   const [saveWarning, setSaveWarning] = useState<string | null>(null)
 
   /** Live mirror, so handlers can read the current board without listing it as
@@ -87,14 +103,42 @@ export function Studio(): React.JSX.Element {
 
   // Restore previously saved work. Runs once, after mount.
   useEffect(() => {
-    const saved = loadStoryboard()
+    setBoardName(boardMeta(boardId)?.name ?? 'Board')
+    const saved = loadBoard(boardId)
     if (saved && (saved.clips.length > 0 || Object.keys(saved.frames).length > 0)) {
       setStoryboard(saved)
+      // Land on the first clip rather than an empty inspector. The right-hand
+      // column is where all the work happens, and "pick something" is a worse
+      // first impression than simply showing the obvious default.
+      if (saved.clips[0]) setSelectedId(saved.clips[0].id)
       setToast(
-        `Restored ${saved.clips.length} clip${saved.clips.length === 1 ? '' : 's'} from your last session.`
+        `Welcome back — ${saved.clips.length} clip${saved.clips.length === 1 ? '' : 's'} restored.`
       )
     }
     setRestored(true)
+
+    // Reattach saved videos. Done after the storyboard is in place and
+    // asynchronously, because IndexedDB is async and the drawings should appear
+    // immediately rather than waiting on megabytes of video.
+    if (saved) {
+      const ids = saved.clips.map((c) => c.id)
+      void (async () => {
+        for (const id of ids) {
+          const blob = await getVideo(id)
+          if (!blob) continue
+          const url = URL.createObjectURL(blob)
+          objectUrls.current.add(url)
+          // Only now is the clip genuinely 'done' - restored as 'ready' first,
+          // so a video that fails to come back never shows a broken player.
+          setStoryboard((sb) => updateClip(sb, id, { videoUrl: url, status: 'done' }))
+        }
+        // Drop videos for clips that no longer exist, or they orphan forever.
+        // Prune against EVERY board's clips, not just this one - pruning on the
+        // open board alone would delete other boards' rendered videos, each of
+        // which cost real money to generate.
+        void pruneVideos(allClipIds())
+      })()
+    }
   }, [])
 
   // Persist on change, debounced: drawing produces a state update per stroke and
@@ -102,13 +146,13 @@ export function Studio(): React.JSX.Element {
   useEffect(() => {
     if (!restored) return
     const t = setTimeout(() => {
-      const result = saveStoryboard(storyboard)
+      const result = saveBoard(boardId, storyboard)
       // Only surface a problem. A silent save failure is the exact thing this
       // feature exists to prevent, so it must be visible and stay visible.
       setSaveWarning(result.warning ?? null)
     }, SAVE_DEBOUNCE_MS)
     return () => clearTimeout(t)
-  }, [storyboard, restored])
+  }, [storyboard, restored, boardId])
 
   /**
    * Bring every stored prompt up to date with the current compiler, once.
@@ -151,6 +195,7 @@ export function Studio(): React.JSX.Element {
   const clips = storyboard.clips
   const selected = clips.find((c) => c.id === selectedId) ?? null
   const selectedIndex = clips.findIndex((c) => c.id === selectedId)
+  const needsKey = !config?.hasServerKey && !apiKey
 
   /**
    * The prompt, derived rather than remembered. Compiling on every render costs
@@ -177,8 +222,8 @@ export function Studio(): React.JSX.Element {
 
     setStoryboard(next)
     // Stay on the storyboard and just select the new clip. Jumping straight
-    // into the canvas hides the board the user was working on; they open the
-    // drawing surface themselves by clicking a keyframe thumbnail.
+    // into the canvas hides the work the user was looking at; they open the
+    // drawing surface themselves by clicking a frame.
     setSelectedId(created.id)
   }, [])
 
@@ -227,20 +272,49 @@ export function Studio(): React.JSX.Element {
     setStoryboard((sb) => setFrameSketch(sb, frameId, sketch))
   }, [])
 
-  const handleDelete = useCallback((clipId: string) => {
-    setStoryboard((sb) => removeClip(sb, clipId))
-    setSelectedId((id) => (id === clipId ? null : id))
-  }, [])
+  const handleDelete = useCallback(
+    (clipId: string) => {
+      const n = storyboardRef.current.clips.findIndex((c) => c.id === clipId) + 1
+      setConfirmation({
+        title: `Delete clip ${n}?`,
+        body: (
+          <p>
+            Both of its drawings go with it, along with anything you have made from them. This
+            cannot be undone.
+          </p>
+        ),
+        confirmLabel: 'Delete this clip',
+        danger: true,
+        onConfirm: () => {
+          setStoryboard((sb) => removeClip(sb, clipId))
+          setSelectedId((id) => (id === clipId ? null : id))
+          // Otherwise the bytes linger with nothing referencing them.
+          void deleteVideo(clipId)
+        }
+      })
+    },
+    []
+  )
 
   const handleLink = useCallback((index: number) => {
-    const ok = window.confirm(
-      'Re-link these clips?\n\nThe next clip will adopt this clip’s end frame. Whatever is drawn on its own start frame will be discarded.'
-    )
-    if (ok) setStoryboard((sb) => linkSeam(sb, index))
+    setConfirmation({
+      title: 'Join these clips back together?',
+      body: (
+        <p>
+          Clip {index + 2} will take on clip {index + 1}&rsquo;s last drawing, so the two flow into
+          each other with no visible jump. <b>Whatever is drawn on clip {index + 2}&rsquo;s own
+          first frame will be thrown away.</b>
+        </p>
+      ),
+      confirmLabel: 'Join them',
+      danger: true,
+      onConfirm: () => setStoryboard((sb) => linkSeam(sb, index))
+    })
   }, [])
 
   const handleUnlink = useCallback((index: number) => {
     setStoryboard((sb) => unlinkSeam(sb, index))
+    setToast('Split — the two clips now have separate drawings.')
   }, [])
 
   /**
@@ -257,26 +331,39 @@ export function Studio(): React.JSX.Element {
     const toId = from === 'start' ? clip.endFrameId : clip.startFrameId
     if (isEmpty(getSketch(sb, fromId))) return
 
+    const source = from === 'start' ? 'first' : 'last'
+    const target = from === 'start' ? 'last' : 'first'
+
     if (!isEmpty(getSketch(sb, toId))) {
-      const ok = window.confirm(
-        `Replace the ${from === 'start' ? 'end' : 'start'} keyframe with a copy of the ${from} keyframe?\n\nWhat is drawn there now will be discarded.`
-      )
-      if (!ok) return
+      setConfirmation({
+        title: `Replace the ${target} frame?`,
+        body: (
+          <p>
+            It will become a copy of the {source} frame, and what is drawn on it now will be
+            thrown away.
+          </p>
+        ),
+        confirmLabel: `Replace the ${target} frame`,
+        danger: true,
+        onConfirm: () => setStoryboard(copyFrameInto(storyboardRef.current, fromId, toId))
+      })
+      return
     }
     setStoryboard(copyFrameInto(sb, fromId, toId))
   }, [])
 
   /**
-   * Open the board for a clip. The keyframes are rasterised HERE, once, through
-   * the clip's shared box - every agent then looks at exactly the images the
-   * video model will receive, so their observations match the real output.
+   * Open the crew room for a clip. The keyframes are rasterised HERE, once,
+   * through the clip's shared box - every crew member then looks at exactly the
+   * images the video model will receive, so their observations match the real
+   * output.
    */
   const openBoard = useCallback((clipId: string) => {
     const sb = storyboardRef.current
     const clip = sb.clips.find((c) => c.id === clipId)
     if (!clip) return
-    // Board agents get a smaller render than the video model: enough to read a
-    // line drawing, a fraction of the bytes and tokens.
+    // The crew get a smaller render than the video model: enough to read a line
+    // drawing, a fraction of the bytes and tokens.
     const { imageA, imageB } = renderClipFrames(
       getSketch(sb, clip.startFrameId),
       getSketch(sb, clip.endFrameId),
@@ -297,9 +384,9 @@ export function Studio(): React.JSX.Element {
       try {
         const revised = await revisePrompt(revisionInstruction(clip.prompt, notes), apiKey)
         setStoryboard((sb) => updateClip(sb, clipId, { revisedPrompt: revised, useRevised: true }))
-        setToast('Prompt revised.')
+        setToast('Brief rewritten.')
       } catch (e) {
-        setToast(e instanceof Error ? e.message : 'Revision failed.')
+        setToast(e instanceof Error ? e.message : 'The rewrite did not work.')
       } finally {
         setBusy(false)
       }
@@ -315,7 +402,7 @@ export function Studio(): React.JSX.Element {
       // Recompile HERE rather than trusting clip.prompt. A stored prompt was
       // produced by whatever the compiler said when it was last touched, so any
       // later improvement to the compiler would silently not apply to an
-      // existing clip - you would click Regenerate and get the old wording back.
+      // existing clip - you would click Render again and get the old wording.
       const mode = effectiveEndMode(sb, clipId)
 
       // In guide mode the end frame is NOT sent to the video model, so its
@@ -359,7 +446,7 @@ export function Studio(): React.JSX.Element {
       )
 
       try {
-        const url = await generateClip({
+        const blob = await generateClip({
           prompt,
           imageA,
           // Withheld in guide mode - that omission IS the fix for the clip
@@ -370,6 +457,12 @@ export function Studio(): React.JSX.Element {
             setStoryboard((sb) => updateClip(sb, clipId, { operation })),
           isCancelled: () => cancelled.current.has(clipId)
         })
+        // Persist the bytes BEFORE anything else. A video is a real charge
+        // against the user's quota, so losing it to a reload is worse than
+        // losing a drawing.
+        const saved = await putVideo(clipId, blob)
+
+        const url = URL.createObjectURL(blob)
         objectUrls.current.add(url)
         setStoryboard((sb) => {
           const prev = sb.clips.find((c) => c.id === clipId)?.videoUrl
@@ -379,9 +472,10 @@ export function Studio(): React.JSX.Element {
           }
           return updateClip(sb, clipId, { status: 'done', videoUrl: url, error: undefined })
         })
-        setToast(`Clip rendered.`)
+        setToast(saved.ok ? 'Clip made and saved.' : 'Clip made.')
+        if (!saved.ok) setSaveWarning(saved.error ?? null)
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Generation failed.'
+        const message = e instanceof Error ? e.message : 'That did not work.'
         const wasCancelled = cancelled.current.has(clipId)
         setStoryboard((sb) =>
           updateClip(sb, clipId, {
@@ -399,7 +493,7 @@ export function Studio(): React.JSX.Element {
 
   const handleCancel = useCallback((clipId: string) => {
     cancelled.current.add(clipId)
-    setToast('Cancelling — the request may still be running on Google’s side.')
+    setToast('Stopping — the request may still be running on Google’s side.')
   }, [])
 
   /* ---------- canvas ---------- */
@@ -423,40 +517,43 @@ export function Studio(): React.JSX.Element {
         sketch={getSketch(storyboard, editingFrameId)}
         onChange={(next) => handleFrameChange(editingFrameId, next)}
         ghost={getSketch(storyboard, otherId)}
-        ghostLabel={editing.side === 'start' ? 'B · end' : 'A · start'}
+        ghostLabel={editing.side === 'start' ? 'the last frame' : 'the first frame'}
         header={
-          <div className="canvas-header">
-            <button className="btn" onClick={() => setEditing(null)}>
-              ← Storyboard
+          <div className="canvas-bar">
+            <button className="btn btn-small" onClick={() => setEditing(null)}>
+              <Icon name="arrowLeft" size={15} />
+              Storyboard
             </button>
 
-            <div className="frame-switch">
+            <span className="canvas-bar-sep" aria-hidden="true" />
+
+            <span className="canvas-clip">Clip {editingClipIndex + 1}</span>
+
+            <div className="segmented">
               <button
                 className={`chip ${editing.side === 'start' ? 'chip-on' : ''}`}
                 onClick={() => setEditing({ ...editing, side: 'start' })}
               >
-                A · start
+                First frame
               </button>
               <button
                 className={`chip ${editing.side === 'end' ? 'chip-on' : ''}`}
                 onClick={() => setEditing({ ...editing, side: 'end' })}
               >
-                B · end
+                Last frame
               </button>
             </div>
 
-            <span className="canvas-title">
-              Clip {editingClipIndex + 1}
-              {shared.length > 1 && (
-                <span
-                  className="shared-badge"
-                  title="This frame is shared with an adjacent clip — edits move both, which is what keeps the cut seamless."
-                >
-                  shared with {shared.length - 1} other clip
-                  {shared.length - 1 === 1 ? '' : 's'}
-                </span>
-              )}
-            </span>
+            {shared.length > 1 && (
+              <span
+                className="shared-badge"
+                title="This drawing is shared with the clip next to it, so editing it changes both. That is what keeps the join invisible."
+              >
+                <Icon name="link" size={13} />
+                Shared with {shared.length - 1} other clip
+                {shared.length - 1 === 1 ? '' : 's'}
+              </span>
+            )}
           </div>
         }
       />
@@ -464,64 +561,88 @@ export function Studio(): React.JSX.Element {
   }
 
   return (
-    <div className="dashboard">
-      <header className="app-head">
-        <h1>
-          sketchime
-          <span className="app-sub">multi-clip storyboard · keyframe interpolation</span>
+    <div className="app">
+      <header className="topbar">
+        <h1 className="brand">
+          <Link href="/" className="brand-mark brand-home" aria-label="All boards" title="All boards">
+            <Icon name="frames" size={16} />
+          </Link>
+          {boardName || 'sketchime'}
         </h1>
-        <div className="app-actions">
-          {!config?.hasServerKey && !apiKey && (
-            <span className="warn-pill" title="Generation and revision need a Gemini API key">
-              no API key
-            </span>
+
+        <div className="topbar-actions">
+          {needsKey && (
+            <button className="btn btn-small" onClick={() => setSettingsOpen(true)}>
+              <Icon name="key" size={15} />
+              Connect Gemini
+            </button>
           )}
-          <button className="btn" onClick={() => setSettingsOpen(true)}>
-            Settings
+          <button
+            className="icon-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <Icon name="settings" />
           </button>
         </div>
       </header>
 
-      <Timeline
-        storyboard={storyboard}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onEditFrame={(clipId, side) => setEditing({ clipId, side })}
-        onAddClip={handleAddClip}
-        onMoveClip={(from, to) => setStoryboard((sb) => moveClip(sb, from, to))}
-        onLinkSeam={handleLink}
-        onUnlinkSeam={handleUnlink}
-        onCopyFrame={handleCopyFrame}
-      />
-
-      {selected ? (
-        <ClipDetail
-          clip={selected}
-          compiled={livePrompt}
-          endMode={endMode}
-          endModeReason={selected ? endModeReason(storyboard, selected.id) : ''}
-          onEndMode={(m) =>
-            setStoryboard((sb) => updateClip(sb, selected.id, { endFrameMode: m }))
-          }
-          videoModel={config?.videoModel}
-          index={selectedIndex}
-          storyboard={storyboard}
-          busy={busy}
-          onIntent={(text) => handleIntent(selected.id, text)}
-          onOpenBoard={() => openBoard(selected.id)}
-          onRevise={(notes) => void handleRevise(selected.id, notes)}
-          onUseRevised={(use) =>
-            setStoryboard((sb) => updateClip(sb, selected.id, { useRevised: use }))
-          }
-          onGenerate={() => void handleGenerate(selected.id)}
-          onCancel={() => handleCancel(selected.id)}
-          onDelete={() => handleDelete(selected.id)}
-        />
+      {clips.length === 0 ? (
+        <Welcome onStart={handleAddClip} needsKey={needsKey} />
       ) : (
-        clips.length > 0 && <p className="empty-note">Select a clip to direct it.</p>
-      )}
+        <div className="workspace">
+          <div className="lane">
+            <Timeline
+              storyboard={storyboard}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onEditFrame={(clipId, side) => setEditing({ clipId, side })}
+              onAddClip={handleAddClip}
+              onMoveClip={(from, to) => setStoryboard((sb) => moveClip(sb, from, to))}
+              onLinkSeam={handleLink}
+              onUnlinkSeam={handleUnlink}
+              onCopyFrame={handleCopyFrame}
+            />
 
-      <FinalCut storyboard={storyboard} />
+            <FinalCut storyboard={storyboard} />
+          </div>
+
+          <aside className="inspector">
+            {selected ? (
+              <ClipDetail
+                clip={selected}
+                compiled={livePrompt}
+                endMode={endMode}
+                endModeReason={endModeReason(storyboard, selected.id)}
+                onEndMode={(m) =>
+                  setStoryboard((sb) => updateClip(sb, selected.id, { endFrameMode: m }))
+                }
+                videoModel={config?.videoModel}
+                index={selectedIndex}
+                storyboard={storyboard}
+                busy={busy}
+                onIntent={(text) => handleIntent(selected.id, text)}
+                onEditFrame={(side) => setEditing({ clipId: selected.id, side })}
+                onCopyFrame={(from) => handleCopyFrame(selected.id, from)}
+                onOpenBoard={() => openBoard(selected.id)}
+                onRevise={(notes) => void handleRevise(selected.id, notes)}
+                onUseRevised={(use) =>
+                  setStoryboard((sb) => updateClip(sb, selected.id, { useRevised: use }))
+                }
+                onGenerate={() => void handleGenerate(selected.id)}
+                onCancel={() => handleCancel(selected.id)}
+                onDelete={() => handleDelete(selected.id)}
+              />
+            ) : (
+              <div className="inspector-empty">
+                <Icon name="frames" size={36} />
+                <p className="empty">Pick a clip on the left to work on it.</p>
+              </div>
+            )}
+          </aside>
+        </div>
+      )}
 
       {boardFor && boardImages && (
         <BoardSurvey
@@ -532,7 +653,7 @@ export function Studio(): React.JSX.Element {
           intent={clips.find((c) => c.id === boardFor)?.intent ?? ''}
           styleNote={storyboard.styleNote}
           apiKey={apiKey}
-          offline={!config?.hasServerKey && !apiKey}
+          offline={needsKey}
           onCancel={() => setBoardFor(null)}
           onComplete={(board) => handleBoardComplete(boardFor, board)}
         />
@@ -548,24 +669,126 @@ export function Studio(): React.JSX.Element {
             saveApiKey(k)
           }}
           onStyleNote={handleStyleNote}
-          onClearSaved={() => {
-            if (
-              window.confirm(
-                'Delete the saved copy of this storyboard?\n\nWhat is currently on screen stays until you reload.'
-              )
-            ) {
-              clearStoryboard()
-              setToast('Saved work deleted.')
-            }
-          }}
+          onClearSaved={() =>
+            setConfirmation({
+              title: `Delete "${boardName}"?`,
+              body: (
+                <p>
+                  This board&apos;s drawings and every video rendered from it go from this browser.
+                  Your other boards are untouched. This cannot be undone.
+                </p>
+              ),
+              confirmLabel: 'Delete board',
+              danger: true,
+              onConfirm: () => {
+                // Videos are keyed by clip id in IndexedDB, so they have to be
+                // removed explicitly or they linger unreferenced.
+                storyboard.clips.forEach((c) => void deleteVideo(c.id))
+                deleteBoard(boardId)
+                router.push('/')
+              }
+            })
+          }
           onConfig={setConfig}
           onClose={() => setSettingsOpen(false)}
         />
       )}
 
-      {saveWarning && <div className="save-warning">{saveWarning}</div>}
+      {confirmation && (
+        <ConfirmDialog confirmation={confirmation} onClose={() => setConfirmation(null)} />
+      )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {saveWarning && (
+        <div className="save-warning" role="alert">
+          <Icon name="alert" size={16} />
+          <span>{saveWarning}</span>
+        </div>
+      )}
+
+      {/* Polite, and never given focus: a status message must not interrupt
+          what someone is typing. */}
+      <div aria-live="polite" aria-atomic="true">
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * First run. An empty tool is the hardest screen to design and the easiest to
+ * get wrong: before this it said "No clips yet", which is a description of the
+ * problem rather than a way out of it.
+ */
+function Welcome({
+  onStart,
+  needsKey
+}: {
+  onStart(): void
+  needsKey: boolean
+}): React.JSX.Element {
+  return (
+    <div className="welcome">
+      <div className="welcome-art" aria-hidden="true">
+        <span className="welcome-sheet">
+          <Icon name="pen" size={26} />
+        </span>
+        <Icon name="arrowRight" size={22} />
+        <span className="welcome-sheet">
+          <Icon name="pen" size={26} />
+        </span>
+      </div>
+
+      {/* h2, not h1: the app name in the top bar is the page's h1, and two of
+          them would leave a screen reader with no single page title. */}
+      <h2>Draw two pictures. Get the movement in between.</h2>
+      <p className="welcome-lead">
+        Sketch where a shot starts and where it ends. A small crew asks you what should happen
+        between them, then animates it.
+      </p>
+
+      <button className="btn btn-primary btn-large" onClick={onStart}>
+        <Icon name="plus" size={18} />
+        Start your first clip
+      </button>
+
+      <div className="welcome-steps">
+        <article className="welcome-step">
+          <h3>
+            <span className="step-num">1</span>
+            Draw
+          </h3>
+          <p>
+            Two frames per clip: the first and the last. The second one usually starts as a copy of
+            the first, with one thing moved.
+          </p>
+        </article>
+        <article className="welcome-step">
+          <h3>
+            <span className="step-num">2</span>
+            Direct
+          </h3>
+          <p>
+            Four specialists look at your actual drawings and ask about timing, camera, physics and
+            background — one question at a time.
+          </p>
+        </article>
+        <article className="welcome-step">
+          <h3>
+            <span className="step-num">3</span>
+            Watch
+          </h3>
+          <p>
+            Every clip is five seconds. Chain them together and save the lot as one video when you
+            are happy.
+          </p>
+        </article>
+      </div>
+
+      <p className="empty">
+        {needsKey
+          ? 'Drawing works right now. Connect a Gemini key when you are ready to animate.'
+          : 'Your work is saved in this browser as you go.'}
+      </p>
     </div>
   )
 }

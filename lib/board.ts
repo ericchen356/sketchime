@@ -25,6 +25,12 @@ export const BOARD_STEPS: BoardStep[] = [
     ],
     defaultDirective:
       'Move at a steady, even pace, with the motion spread evenly across the full five seconds.',
+    probes: [
+      'the overall speed and whether it is even or changing',
+      'where the accent or impact beat lands in the five seconds',
+      'whether there is anticipation, a wind-up, or a hold before the main action',
+      'how the motion begins and how it tails off'
+    ],
     compilesInto: 'easing'
   },
   {
@@ -41,6 +47,12 @@ export const BOARD_STEPS: BoardStep[] = [
     ],
     defaultDirective:
       'Hold the camera completely still and let the subject move within a fixed frame.',
+    probes: [
+      'whether the camera moves at all, and if so how',
+      'the shot size, and whether it changes during the take',
+      'whether the camera tracks the subject or lets it move through frame',
+      'any push-in, pull-out, tilt, shake or handheld feel'
+    ],
     compilesInto: 'camera'
   },
   {
@@ -58,6 +70,12 @@ export const BOARD_STEPS: BoardStep[] = [
     ],
     defaultDirective:
       'Move the existing line art by rotation and translation only, keeping shapes undeformed and stroke weight constant.',
+    probes: [
+      'which specific parts of the subject deform, and which stay rigid',
+      'how much squash, stretch or exaggeration is wanted',
+      'secondary motion — hair, clothing, loose objects, follow-through',
+      'the arc the moving parts travel along, and any overshoot or settle'
+    ],
     compilesInto: 'physics'
   },
   {
@@ -74,6 +92,12 @@ export const BOARD_STEPS: BoardStep[] = [
     ],
     defaultDirective:
       'Keep the background clean and unchanged for the whole shot, adding no extra effects.',
+    probes: [
+      'what the background does — static, moving, or changing',
+      'impact or motion effects: speed lines, dust, debris, impact flashes',
+      'foreground elements and anything that should pass in front of the subject',
+      'lighting, atmosphere and overall colour treatment'
+    ],
     compilesInto: 'environment'
   }
 ]
@@ -106,6 +130,23 @@ export function offlineTurn(step: BoardStep): {
 export function offlineDirective(step: BoardStep, answerText: string): string {
   const text = answerText.trim()
   return text.endsWith('.') ? text : `${text}.`
+}
+
+/** "The Lead Animator" -> "Lead Animator". The definite article is part of the
+ * spec's role names but reads as ceremony in a list of four. */
+export function crewName(role: string): string {
+  return role.replace(/^The\s+/i, '')
+}
+
+/** Two-letter monogram for a crew member's avatar. */
+export function crewInitials(role: string): string {
+  const words = crewName(role).split(/\s+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  if (words.length === 1) return words[0].slice(0, 2).replace(/^./, (c) => c.toUpperCase())
+  return words
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('')
 }
 
 export const BOARD_STEP_IDS: BoardStepId[] = BOARD_STEPS.map((s) => s.id)

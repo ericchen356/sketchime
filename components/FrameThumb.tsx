@@ -9,19 +9,31 @@ interface Props {
   sketch: Sketch
   /** Render through this box instead of the sketch's own. Passing a clip's
    * shared box makes the two thumbnails line up exactly the way the exported
-   * keyframes will, so the timeline previews the real framing. */
+   * keyframes will, so the storyboard previews the real framing. */
   box?: Rect
-  label?: string
+  /** Name of the frame, revealed on hover rather than stamped over the
+   * drawing. The previous permanent "A" / "B" badges labelled the frames with
+   * something only the documentation explained. */
+  caption?: string
+  /** Shown in place of the drawing when there is nothing in it yet. */
+  emptyLabel?: string
   width?: number
   height?: number
 }
 
 /**
  * A small rasterised preview of a frame. Draws straight to a canvas rather than
- * producing a data URL - a board with a dozen clips would otherwise hold two
+ * producing a data URL — a board with a dozen clips would otherwise hold two
  * dozen base64 strings in memory for no reason.
  */
-export function FrameThumb({ sketch, box, label, width = 160, height = 90 }: Props): React.JSX.Element {
+export function FrameThumb({
+  sketch,
+  box,
+  caption,
+  emptyLabel = 'Empty — click to draw',
+  width = 160,
+  height = 90
+}: Props): React.JSX.Element {
   const ref = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -40,10 +52,10 @@ export function FrameThumb({ sketch, box, label, width = 160, height = 90 }: Pro
   }, [sketch, box, width, height])
 
   return (
-    <span className="thumb" style={{ width, height }}>
+    <span className="thumb" style={{ width, height, aspectRatio: `${width} / ${height}` }}>
       <canvas ref={ref} style={{ width, height }} />
-      {isEmpty(sketch) && <span className="thumb-empty">empty</span>}
-      {label && <span className="thumb-label">{label}</span>}
+      {isEmpty(sketch) && <span className="thumb-empty">{emptyLabel}</span>}
+      {caption && <span className="thumb-cap">{caption}</span>}
     </span>
   )
 }
