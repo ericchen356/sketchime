@@ -17,10 +17,13 @@ nothing is written to disk — closing the tab discards the board.
 
 1. **Add a clip.** It gets a start keyframe (Image A) and an end keyframe (Image B).
 2. **Draw them** in the full-screen canvas, with the other keyframe showing
-   through as an onion skin.
+   through as an onion skin. Most end frames start as a copy of the start frame
+   with one thing moved — the timeline's `→` and the canvas's `shift+D` both do
+   that copy for you.
 3. **Run the board** — four directors, in strict order. Each one *looks at your
    two keyframes*, says what it sees, and keeps asking until it's satisfied.
-4. **Compile** the prompt, optionally have Gemini tighten it, then generate.
+4. **Compile** the prompt, optionally have Gemini tighten it, then generate. The
+   estimated cost of the render is shown next to the button, before the click.
 
 ### The board actually looks at your drawing
 
@@ -32,9 +35,20 @@ bouncing ball and a character turning. Option D is always a write-in.
 It does not stop after one question. It keeps asking follow-ups until it declares
 itself **satisfied**, at which point it commits a **directive** — one or two
 imperative sentences that go into the compiled prompt verbatim. Only then does
-the next member take over. Follow-ups are capped at `MAX_TURNS_PER_AGENT` (4), and
-the agent is told how many turns remain so it commits rather than opening a line
-of questioning it can't finish.
+the next member take over.
+
+Follow-ups are capped at `MAX_TURNS_PER_AGENT` (4), and the cap is *enforced in
+code* on both the client and the server — telling the agent about it in the
+prompt is not enough, since a chatty one simply ignores it. Past the limit the
+reply is rewritten into a commit whatever it says. **Enough — decide** cuts the
+questioning short at any point.
+
+Every step also carries a neutral `defaultDirective` for the case where an agent
+commits without producing anything usable. That slot used to fall back to the
+step's own brief *question*, which then travelled into the prompt sent to the
+video model, where it directed nothing at all. Compiled directives are sanitised
+for question-shaped text on the way out, so a board answered before that check
+existed is repaired rather than baking the question in forever.
 
 Without an API key the board degrades honestly: it falls back to the spec's fixed
 questions and options, single-turn, and labels itself `offline` so you know
@@ -55,34 +69,96 @@ have to overwrite one of two boundary drawings to keep the chain intact, silentl
 destroying work. Instead the link breaks, the seam is marked **cut**, and you can
 re-link it explicitly — with a confirmation, since that *is* the destructive move.
 
+### Guide vs exact end frames
+
+Veo's `lastFrame` is a **hard constraint**: supply it and the model must land on
+that exact image, so when its natural motion diverges from the target it
+reconciles by snapping, regressing or fading in the final second. No amount of
+prompt wording talks it out of that — the only way out is to not send the frame.
+
+So each clip has an end-frame mode, shown and overridable in the clip panel:
+
+- **`exact`** pins the frame. Required wherever clips are chained, because clip
+  N's last frame has to *be* clip N+1's first frame or the cut shows.
+- **`guide`** withholds the image and lets the clip run out mid-motion. The end
+  frame still steers the action — a vision model turns it into prose via
+  `/api/describe`, and that description is the entire channel through which the
+  intended destination reaches the video model.
+
+The default is derived per seam rather than set globally: a clip whose end frame
+is shared with the next clip is pinned, and an unchained one is free to end
+mid-motion. Each mode compiles a different transition brief — they are different
+jobs, not different wording.
+
 ### Shared framing
 
 Both keyframes of a clip are rasterised through one shared 16:9 world box. Render
 them to their own tight crops and the model reads the crop difference as camera
 movement, so the subject appears to jump between the first and last frame.
 
+The board agents get the same pair at 768×432 rather than full size — a vision
+model reading "what is drawn and what moved" needs far less than 720p for flat
+line art, and the board runs four agents over several turns each.
+
 ## Gemini setup
 
-Two ways to supply a key, checked in this order:
+Two ways to supply a key:
 
-1. **`GEMINI_API_KEY` in `.env.local`** — preferred. The key stays server-side and
-   never reaches the browser.
-2. **The in-app Settings dialog** — held in `sessionStorage`, gone when the tab
-   closes. Convenient for local use.
+1. **The in-app Settings dialog** — held in `sessionStorage`, gone when the tab
+   closes. **This wins** if both are present. Env-first looks safer but is
+   hostile: a stale key in `.env.local` silently shadows the one you just
+   pasted, and every request fails against a key you can't see and didn't
+   choose.
+2. **`GEMINI_API_KEY` in `.env.local`** — the default for deployments, where
+   nobody types anything. The key stays server-side and never reaches the
+   browser.
 
-Model ids are overridable with `GEMINI_VIDEO_MODEL` and `GEMINI_TEXT_MODEL`.
-Every provider-specific detail lives in `lib/server/gemini.ts`.
+**Save & check** in Settings asks Google which models the key can actually call
+and reports back what it picked.
 
-> **Verify before you rely on it:** keyframe interpolation needs a Veo model that
-> accepts a `lastFrame` (Veo 3.1+); earlier Veo models take a start image only.
-> The text and vision paths are confirmed reaching the live API; the video request and
-> response shapes are written to Google's documented contract but have **not**
-> been exercised against a real key here. The response parser searches the
-> operation payload for a video URI rather than assuming one path, so a shape
-> change degrades to a clear error rather than a wrong field.
+### Models are discovered, not hardcoded
 
-The browser never talks to Google directly — `/api/veo` and `/api/revise` proxy
-everything, including the finished video download (its URL needs the key).
+Hardcoding one model id does not survive contact with the API: ids get retired,
+and older ones get closed to *new* keys while existing keys keep working — so
+the same id succeeds for one person and 404s for another. Text and video each
+carry an ordered preference list, and what a given key can really call is
+discovered at runtime through `/models` and cached per key.
+
+Every request retries transient failures with short backoff, then walks down the
+candidate list. Two deliberate exceptions:
+
+- **Rate limiting never fails over.** Quota is per project, not per model, so
+  retrying just burns time to reach the same answer. Veo in particular is often
+  unavailable on a free-tier key, and reporting "everything is busy" would send
+  you to wait for a spike that never passes.
+- **Video never escalates on overload.** Its list is ordered *cheapest first*, so
+  the next model up is a pricier one — silently turning a $0.25 render into a
+  $2.00 one because the cheap tier was briefly busy is a surprise bill, not
+  resilience. Set `GEMINI_VIDEO_MODEL` to choose a tier deliberately.
+
+`GEMINI_VIDEO_MODEL` and `GEMINI_TEXT_MODEL` collapse discovery to one entry:
+name a model and you get that model, including its errors. `GEMINI_API_BASE`
+repoints the endpoint for testing the failover paths — never aim it anywhere
+untrusted, the API key goes with it. Every provider-specific detail lives in
+`lib/server/gemini.ts`.
+
+Two video backends sit behind one call site. **Veo** is long-running and returns
+an operation to poll; it is the only one that can pin a `lastFrame`, so chained
+seams require it. **Gemini Omni Flash** is a different API surface entirely
+(`/interactions`, synchronous, one image only) — it cannot pin an end frame at
+all, which suits `guide` mode and rules it out for chaining.
+
+> **Verify before you rely on it:** the text and vision paths are confirmed
+> reaching the live API. The video request and response shapes follow Google's
+> documented contract but have **not** been exercised against a real key here.
+> The parsers search for a video URI rather than assuming one path, so a shape
+> change degrades to a clear error rather than a wrong field. Optional Veo
+> parameters are dropped one at a time as the API rejects them, since revisions
+> differ in which they accept.
+
+The browser never talks to Google directly — `/api/board`, `/api/describe`,
+`/api/revise`, `/api/veo` and `/api/config` proxy everything, including the
+finished video download (its URL needs the key).
 
 ## Canvas controls
 
@@ -91,6 +167,7 @@ everything, including the finished video download (its URL needs the key).
 | `d` / `e` / `t` / `m` | pen, eraser, text, pan |
 | `e` again | flip the eraser between **stroke** and **pixel** |
 | `c` / `g` | colour & brush panel / onion skin |
+| `shift+D` | copy the other keyframe's ink into this one (additive, one undo) |
 | `1`–`9` | palette colours |
 | `w` / `s` | brush bigger / smaller |
 | wheel, ctrl/⌘+wheel, middle-drag | pan, zoom about the cursor, pan anywhere |
@@ -109,9 +186,12 @@ lib/camera.ts       every screen<->world conversion, grid, fit, zoom-at-cursor
 lib/render.ts       sketch -> PNG through a shared clip box
 lib/board.ts        the four board steps + offline fallback
 lib/compile.ts      Stage 2 master compiler + revision brief
-lib/storyboard.ts   chaining, seams, link/unlink, reorder, frame GC
-lib/server/gemini.ts  ALL provider-specific detail, server-only:
-                      vision board agents, prompt revision, Veo interpolation
+lib/storyboard.ts   chaining, seams, link/unlink, reorder, frame GC,
+                    end-frame mode per seam
+lib/server/gemini.ts  ALL provider-specific detail, server-only: model discovery
+                      and failover, vision board agents, frame description,
+                      prompt revision, Veo + Omni Flash video
+app/api/            board · describe · revise · veo · config (all proxies)
 components/         SketchLayer (canvas) · Canvas (surface) · Rail (tools)
                     Studio (app) · Timeline · BoardSurvey · ClipDetail
 ```
@@ -139,6 +219,21 @@ Three things carry most of the weight:
   the last would apply.
 - Undo is snapshot-based and capped at 100. An eraser drag snapshots once, so the
   whole drag undoes as one — and Clear is undoable for the same reason.
+- **The prompt is compiled on every render, not cached on the clip.** It is
+  string assembly, so recomputing costs nothing, and it removes a whole class of
+  bug: a stored prompt is whatever the compiler said when the clip was last
+  touched, so an improvement to the compiler would reach new clips only — the
+  panel would show one thing while generation sent another. Generation
+  recompiles too.
+- Copying a keyframe clones strokes with fresh ids and copied point arrays. Two
+  frames about to be edited apart must never end up aliasing each other.
+
+## Design skill
+
+`.claude/skills/` holds [UI/UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill),
+installed project-scoped with `npx ui-ux-pro-max-cli init --ai claude`. It is
+searchable design guidance for agents working on this UI; the search script needs
+Python 3 and no external dependencies. Nothing in the app imports it.
 
 ## Credit
 
