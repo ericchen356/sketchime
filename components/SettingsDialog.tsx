@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { resolveModels, type ServerConfig } from '@/lib/gemini-client'
+import { savedInfo } from '@/lib/persist'
 
 interface Props {
   apiKey: string
@@ -9,6 +10,7 @@ interface Props {
   styleNote: string
   onApiKey(key: string): void
   onStyleNote(note: string): void
+  onClearSaved(): void
   onConfig(config: ServerConfig): void
   onClose(): void
 }
@@ -19,12 +21,15 @@ export function SettingsDialog({
   styleNote,
   onApiKey,
   onStyleNote,
+  onClearSaved,
   onConfig,
   onClose
 }: Props): React.JSX.Element {
   const [draft, setDraft] = useState(apiKey)
   const [reveal, setReveal] = useState(false)
   const [checking, setChecking] = useState(false)
+  // Read once on open: it only changes when the user clears it from here.
+  const [saved] = useState(() => savedInfo())
   const [checkError, setCheckError] = useState<string | null>(null)
 
   /** Save, then immediately ask Google which models this key can call - a bad
@@ -104,6 +109,28 @@ export function SettingsDialog({
             onChange={(e) => onStyleNote(e.target.value)}
           />
         </label>
+
+        <div className="field">
+          <span className="field-label">Saved work</span>
+          {saved ? (
+            <>
+              <p className="hint-note">
+                {saved.clips} clip{saved.clips === 1 ? '' : 's'} saved in this browser (
+                {(saved.bytes / 1024).toFixed(0)} KB), last written{' '}
+                {new Date(saved.savedAt).toLocaleString()}. Your drawings come back when you
+                reload. Rendered videos do not — those live only in the page.
+              </p>
+              <button className="btn btn-small btn-ghost" onClick={onClearSaved}>
+                Delete saved work
+              </button>
+            </>
+          ) : (
+            <p className="hint-note">
+              Nothing saved yet. Your storyboard is written to this browser automatically as you
+              draw.
+            </p>
+          )}
+        </div>
 
         {checkError && <p className="error-note">{checkError}</p>}
 

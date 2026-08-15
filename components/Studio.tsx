@@ -5,6 +5,7 @@ import { Canvas } from './Canvas'
 import { Timeline } from './Timeline'
 import { BoardSurvey } from './BoardSurvey'
 import { ClipDetail } from './ClipDetail'
+import { FinalCut } from './FinalCut'
 import { SettingsDialog } from './SettingsDialog'
 import { compilePrompt, revisionInstruction } from '@/lib/compile'
 import { BOARD_H, BOARD_W, renderClipFrames } from '@/lib/render'
@@ -34,6 +35,12 @@ import {
   unlinkSeam,
   updateClip
 } from '@/lib/storyboard'
+import {
+  clearStoryboard,
+  loadStoryboard,
+  saveStoryboard,
+  SAVE_DEBOUNCE_MS
+} from '@/lib/persist'
 import type { BoardThreads, Sketch, Storyboard } from '@/lib/types'
 
 /** Which frame the full-screen canvas is editing, if any. */
@@ -54,6 +61,14 @@ export function Studio(): React.JSX.Element {
   const [config, setConfig] = useState<ServerConfig | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  /**
+   * Whether saved work has been read back yet. Load happens in an effect (
+   * localStorage does not exist during server render), and until it finishes the
+   * storyboard is the empty initial value - persisting THAT would wipe the very
+   * work we are trying to restore. So saving is gated on this flag.
+   */
+  const [restored, setRestored] = useState(false)
+  const [saveWarning, setSaveWarning] = useState<string | null>(null)
 
   /** Live mirror, so handlers can read the current board without listing it as
    * a dependency (and without re-binding on every stroke). */
@@ -69,6 +84,31 @@ export function Studio(): React.JSX.Element {
     setApiKey(loadApiKey())
     fetchConfig().then(setConfig).catch(() => setConfig(null))
   }, [])
+
+  // Restore previously saved work. Runs once, after mount.
+  useEffect(() => {
+    const saved = loadStoryboard()
+    if (saved && (saved.clips.length > 0 || Object.keys(saved.frames).length > 0)) {
+      setStoryboard(saved)
+      setToast(
+        `Restored ${saved.clips.length} clip${saved.clips.length === 1 ? '' : 's'} from your last session.`
+      )
+    }
+    setRestored(true)
+  }, [])
+
+  // Persist on change, debounced: drawing produces a state update per stroke and
+  // serialising the whole board on each one would stutter the canvas.
+  useEffect(() => {
+    if (!restored) return
+    const t = setTimeout(() => {
+      const result = saveStoryboard(storyboard)
+      // Only surface a problem. A silent save failure is the exact thing this
+      // feature exists to prevent, so it must be visible and stay visible.
+      setSaveWarning(result.warning ?? null)
+    }, SAVE_DEBOUNCE_MS)
+    return () => clearTimeout(t)
+  }, [storyboard, restored])
 
   /**
    * Bring every stored prompt up to date with the current compiler, once.
@@ -481,6 +521,8 @@ export function Studio(): React.JSX.Element {
         clips.length > 0 && <p className="empty-note">Select a clip to direct it.</p>
       )}
 
+      <FinalCut storyboard={storyboard} />
+
       {boardFor && boardImages && (
         <BoardSurvey
           clipIndex={clips.findIndex((c) => c.id === boardFor)}
@@ -506,10 +548,22 @@ export function Studio(): React.JSX.Element {
             saveApiKey(k)
           }}
           onStyleNote={handleStyleNote}
+          onClearSaved={() => {
+            if (
+              window.confirm(
+                'Delete the saved copy of this storyboard?\n\nWhat is currently on screen stays until you reload.'
+              )
+            ) {
+              clearStoryboard()
+              setToast('Saved work deleted.')
+            }
+          }}
           onConfig={setConfig}
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {saveWarning && <div className="save-warning">{saveWarning}</div>}
 
       {toast && <div className="toast">{toast}</div>}
     </div>
