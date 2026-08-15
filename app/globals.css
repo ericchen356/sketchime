@@ -1,0 +1,1407 @@
+:root {
+  --paper: #f7f6f3;
+  --surface: #ffffff;
+  --ink: #1c1b1a;
+  --muted: #78736c;
+  --line: rgba(28, 27, 26, 0.1);
+  --line-strong: rgba(28, 27, 26, 0.22);
+  --accent: #4478cc;
+  --danger: #d94f45;
+  --shadow: 0 10px 34px rgba(28, 27, 26, 0.12);
+  --radius: 14px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  /* One pan camera replaces native scroll. The viewport is fixed and the world
+     is panned by transform, so the document itself never scrolls. */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The fixed viewport onto the plane. The world (below) is panned/zoomed inside
+   it; nothing here scrolls. A faint dot grid gives the pan something to read
+   against - without it an empty plane looks frozen while you drag.
+
+   background-size and background-position are set INLINE from gridPattern()
+   (see lib/camera): they carry the zoom and the pan respectively, which is what
+   locks the dots to world coordinates. Only the dot itself lives here. */
+.studio {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background-color: var(--paper);
+  background-image: radial-gradient(circle, rgba(28, 27, 26, 0.14) 1.1px, transparent 1.1px);
+}
+
+/* ---------- camera / world ---------- */
+
+/* The single transformed container. transform-origin MUST be 0 0 to match the
+   screenToWorld math (see lib/camera). Pointer-inert so background drags fall
+   through to the backdrop; the canvas and text items re-enable events. */
+.world {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  transform-origin: 0 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* Empty-plane drag target, beneath the world. */
+.backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.studio[data-tool='pan'] .backdrop {
+  cursor: grab;
+}
+.studio[data-tool='pan'] .backdrop:active {
+  cursor: grabbing;
+}
+
+/* Camera-following ink wrapper (positioned and sized inline from inkFrame).
+   Inherits pointer-events:none from .world; only its canvas child re-enables
+   them, so the empty wrapper never blocks panning. */
+.ink-frame {
+  position: absolute;
+}
+
+/* ---------- ink ---------- */
+
+.sketch-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  /* pointer-events is inherited and .world sets it to none, so make it explicit
+     here. data-tool='pan' / data-hidden below turn it back off. */
+  pointer-events: auto;
+}
+
+.sketch-canvas,
+.text-layer {
+  transition: opacity 220ms ease;
+}
+
+.sketch-canvas[data-tool='pen'] {
+  cursor: crosshair;
+}
+.sketch-canvas[data-tool='text'] {
+  cursor: text;
+}
+
+/* The eraser wears its own footprint, and the two modes wear different ones:
+   a wide ring for whole-stroke, a small filled disc for pixel. Radii here must
+   track ERASE_RADIUS / PIXEL_ERASE_RADIUS in Canvas.tsx. */
+.studio[data-erase='stroke'] .sketch-canvas[data-tool='eraser'] {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'%3E%3Ccircle cx='17' cy='17' r='16' fill='rgba(255,255,255,0.35)' stroke='rgba(28,27,26,0.6)' stroke-width='1.5'/%3E%3C/svg%3E")
+      17 17,
+    crosshair;
+}
+.studio[data-erase='pixel'] .sketch-canvas[data-tool='eraser'] {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='9' fill='rgba(217,79,69,0.16)' stroke='rgba(217,79,69,0.8)' stroke-width='1.5'/%3E%3Ccircle cx='10' cy='10' r='1.4' fill='rgba(217,79,69,0.9)'/%3E%3C/svg%3E")
+      10 10,
+    crosshair;
+}
+
+/* Pan mode hands input to the backdrop underneath, so drags pan. */
+.sketch-canvas[data-tool='pan'] {
+  pointer-events: none;
+}
+
+.sketch-canvas[data-hidden='true'],
+.text-layer[data-hidden='true'] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------- text ---------- */
+
+/* Zero-size and anchored at the world origin, so children read world coords
+   1:1 and overflow freely in every direction. */
+.text-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 11;
+}
+
+.text-item {
+  position: absolute;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: pre;
+  pointer-events: auto;
+}
+
+.text-item-editing {
+  min-width: 120px;
+  padding: 0;
+  font: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 1.5px dashed currentColor;
+  outline: none;
+}
+
+.text-item-editing::placeholder {
+  color: currentColor;
+  opacity: 0.35;
+}
+
+/* ---------- rail ---------- */
+
+/* A vertical rail down the left edge. Anchored, not centred, so it does not
+   move when the window resizes. */
+.rail {
+  position: fixed;
+  left: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rail-sep {
+  width: 20px;
+  height: 1px;
+  margin: 3px 0;
+  background: var(--line);
+}
+
+.rail-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.rail-btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: rgba(28, 27, 26, 0.06);
+}
+
+/* The active tool gets a solid ink slab - unmistakable at a glance, and the
+   only high-contrast element on the rail. */
+.rail-btn-on,
+.rail-btn-on:hover:not(:disabled) {
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.rail-btn-danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: rgba(217, 79, 69, 0.1);
+}
+
+.rail-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* The letter hint riding each tool button's corner. */
+.rail-key {
+  position: absolute;
+  right: 3px;
+  bottom: 1px;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Current colour, as a rounded chip inside its button. */
+.ink-chip {
+  width: 17px;
+  height: 17px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+}
+
+/* Brush size as a bare number - the visual preview lives in the flyout. */
+.rail-readout {
+  display: grid;
+  place-items: center;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  cursor: default;
+}
+
+.rail-zoom {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 1px;
+  width: 36px;
+  padding: 5px 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.rail-zoom:hover {
+  color: var(--ink);
+  background: rgba(28, 27, 26, 0.06);
+}
+
+.rail-zoom-pct {
+  font-size: 8px;
+  opacity: 0.6;
+}
+
+/* ---------- flyouts ---------- */
+
+/* Both panels hang off the rail's right edge; each pins its own vertical
+   anchor so it lines up with the control that opened it. */
+.flyout {
+  position: absolute;
+  left: calc(100% + 9px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+/* Aligned with the eraser, the second button in the first group:
+   7px padding + 36px button + 3px gap. */
+.flyout-erase {
+  top: 46px;
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+}
+
+.flyout-palette {
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.chip {
+  padding: 4px 9px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.chip:hover {
+  color: var(--ink);
+  background: rgba(28, 27, 26, 0.06);
+}
+
+.chip-on,
+.chip-on:hover {
+  color: var(--surface);
+  background: var(--ink);
+}
+
+/* ---------- palette ---------- */
+
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  gap: 6px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border: 2px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  transition: transform 120ms ease;
+}
+
+.swatch:hover {
+  transform: scale(1.12);
+}
+
+.swatch-on {
+  border-color: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.12),
+    0 0 0 2px var(--ink);
+}
+
+.swatch-custom {
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
+.swatch-wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: conic-gradient(#d94f45, #e0873a, #4f9d63, #4478cc, #8a63d2, #d94f45);
+}
+
+/* Kept in the layout but invisible - the swatch above triggers it, and a
+   fully hidden input can't be opened by .click() in some browsers. */
+.color-input {
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---------- brush ---------- */
+
+.brush-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+/* Fixed box so the row doesn't reflow as the dot grows. */
+.brush-preview {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+}
+
+.brush-dot {
+  border-radius: 50%;
+  transition: width 120ms ease, height 120ms ease;
+}
+
+.brush-range {
+  width: 96px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+
+/* Fleeting size readout while w/s are tapped - bottom centre, out of the
+   drawing hand's way. */
+.brush-flash {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* ================================================================
+ * Storyboard dashboard
+ * ================================================================ */
+
+/* html/body are locked for the canvas camera, so the dashboard supplies its
+   own scroll container rather than unlocking the document. */
+.dashboard {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px 26px 60px;
+  background: var(--paper);
+}
+
+.app-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.app-head h1 {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.app-sub,
+.detail-meta,
+.timeline-meta {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.app-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warn-pill {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a5a12;
+  background: #fdf0d5;
+  border: 1px solid #efd9a8;
+  border-radius: 999px;
+}
+
+/* ---------- buttons & fields ---------- */
+
+.btn {
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.btn:hover:not(:disabled) {
+  background: rgba(28, 27, 26, 0.05);
+}
+.btn:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+.btn-primary {
+  color: var(--surface);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.btn-primary:hover:not(:disabled) {
+  background: #333130;
+}
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.btn-ghost {
+  color: var(--danger);
+  background: transparent;
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(217, 79, 69, 0.09);
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  color: var(--ink);
+  background: rgba(28, 27, 26, 0.06);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field-input {
+  width: 100%;
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  outline: none;
+  resize: vertical;
+}
+.field-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(68, 120, 204, 0.14);
+}
+
+.hint-note {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.hint-note code {
+  padding: 1px 4px;
+  font-size: 11px;
+  background: rgba(28, 27, 26, 0.07);
+  border-radius: 4px;
+}
+
+.empty-note {
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.error-note {
+  padding: 9px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8c2f27;
+  background: rgba(217, 79, 69, 0.09);
+  border: 1px solid rgba(217, 79, 69, 0.28);
+  border-radius: 9px;
+}
+
+/* ---------- timeline ---------- */
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.timeline-head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Horizontal filmstrip; clips overflow sideways rather than wrapping, so the
+   sequence always reads as a timeline. */
+.strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding-bottom: 8px;
+  overflow-x: auto;
+}
+
+.strip-cell {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.clip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 306px;
+  padding: 11px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.clip-card:hover {
+  border-color: rgba(28, 27, 26, 0.36);
+}
+.clip-card-on {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px rgba(28, 27, 26, 0.16);
+}
+.clip-card-dragging {
+  opacity: 0.4;
+}
+/* Drop target while dragging another card over this one. */
+.clip-card-target {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(68, 120, 204, 0.2);
+}
+
+.clip-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-index {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--surface);
+  background: var(--ink);
+  border-radius: 6px;
+}
+
+.clip-status {
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(28, 27, 26, 0.06);
+  border-radius: 999px;
+}
+.clip-status-ready { color: #2f6b45; background: rgba(79, 157, 99, 0.16); }
+.clip-status-generating { color: #7a5a12; background: rgba(220, 176, 60, 0.22); }
+.clip-status-done { color: #2c5aa0; background: rgba(68, 120, 204, 0.16); }
+.clip-status-error { color: #8c2f27; background: rgba(217, 79, 69, 0.14); }
+
+.clip-grip {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.clip-frames {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.frame-btn {
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.frame-btn:hover .thumb {
+  border-color: var(--accent);
+}
+
+.frame-arrow {
+  font-size: 15px;
+  color: var(--muted);
+}
+
+.thumb {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  transition: border-color 120ms ease;
+}
+.thumb canvas {
+  display: block;
+}
+.thumb-label {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--surface);
+  background: rgba(28, 27, 26, 0.62);
+  border-radius: 4px;
+}
+.thumb-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(28, 27, 26, 0.28);
+  pointer-events: none;
+}
+
+.clip-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.board-pips {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.pip {
+  width: 6px;
+  height: 6px;
+  background: rgba(28, 27, 26, 0.16);
+  border-radius: 50%;
+}
+.pip-on {
+  background: var(--ink);
+}
+
+.clip-intent {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The join between two clips. */
+.seam {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  flex: none;
+}
+.seam-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.seam-icon {
+  font-size: 13px;
+}
+.seam-linked .seam-btn { color: #2f6b45; }
+.seam-broken .seam-btn { color: var(--danger); }
+.seam-btn:hover {
+  background: rgba(28, 27, 26, 0.06);
+}
+
+/* ---------- clip detail ---------- */
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-width: 900px;
+  padding: 17px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.detail-head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.board-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.board-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.answer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  list-style: none;
+}
+.answer-list li {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px;
+  padding: 6px 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  background: rgba(28, 27, 26, 0.035);
+  border-radius: 8px;
+}
+.answer-role {
+  font-weight: 700;
+  color: var(--muted);
+}
+.answer-text i {
+  color: rgba(28, 27, 26, 0.4);
+}
+.answer-list li.answered .answer-role {
+  color: var(--ink);
+}
+
+.prompt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.prompt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.prompt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.toggle-group {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(28, 27, 26, 0.06);
+  border-radius: 9px;
+}
+
+.prompt-text {
+  max-height: 260px;
+  padding: 12px 14px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  background: #fbfaf8;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.revise-row {
+  display: flex;
+  gap: 8px;
+}
+.revise-row .field-input {
+  flex: 1;
+}
+
+.generate-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-top: 3px;
+}
+.blocker-note,
+.generating-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(28, 27, 26, 0.16);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.clip-video {
+  width: 100%;
+  max-width: 640px;
+  background: #000;
+  border-radius: 10px;
+}
+
+/* ---------- modals ---------- */
+
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: rgba(28, 27, 26, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(620px, 100%);
+  padding: 20px;
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(28, 27, 26, 0.3);
+}
+.modal-board {
+  width: min(700px, 100%);
+}
+
+.board-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.board-head h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 19px;
+  font-weight: 700;
+}
+.board-eyebrow {
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.board-topic {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Sequential progress rail. */
+.board-track {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+}
+.track-node {
+  display: flex;
+  align-items: center;
+}
+.track-node + .track-node::before {
+  content: '';
+  width: 42px;
+  height: 2px;
+  background: var(--line-strong);
+}
+.track-node button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.track-node button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.track-done button {
+  color: var(--surface);
+  background: #4f9d63;
+  border-color: #4f9d63;
+}
+.track-now button {
+  color: var(--surface);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.board-objective {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.board-question {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.board-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.option {
+  display: flex;
+  gap: 11px;
+  width: 100%;
+  padding: 12px 13px;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--line-strong);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.option:hover {
+  border-color: rgba(28, 27, 26, 0.4);
+}
+.option-on {
+  border-color: var(--ink);
+  background: rgba(28, 27, 26, 0.045);
+}
+
+.option-key {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--muted);
+  background: rgba(28, 27, 26, 0.07);
+  border-radius: 6px;
+}
+.option-on .option-key {
+  color: var(--surface);
+  background: var(--ink);
+}
+
+.option-custom {
+  flex-direction: column;
+  gap: 9px;
+  cursor: default;
+}
+.option-hit {
+  display: flex;
+  gap: 11px;
+  padding: 0;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.option-input {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  background: #fbfaf8;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+}
+.option-input:focus {
+  border-color: var(--accent);
+}
+
+.board-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.key-row {
+  display: flex;
+  gap: 8px;
+}
+.key-row .field-input {
+  flex: 1;
+}
+
+/* ---------- canvas chrome (full-screen frame editor) ---------- */
+
+.canvas-header {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.frame-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(28, 27, 26, 0.06);
+  border-radius: 9px;
+}
+
+.canvas-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.shared-badge {
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #2c5aa0;
+  background: rgba(68, 120, 204, 0.14);
+  border-radius: 999px;
+}
+
+.ghost-toggle {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 6px 13px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.ghost-toggle-on {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* ---------- toast ---------- */
+
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  max-width: min(560px, calc(100vw - 40px));
+  padding: 10px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--surface);
+  background: var(--ink);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(28, 27, 26, 0.3);
+}
+
+/* ---------- board conversation ---------- */
+
+/* The thread scrolls; the header, track and footer stay put, so a long
+   consultation never pushes the controls off-screen. */
+.board-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(52vh, 520px);
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.exchange + .exchange {
+  padding-top: 16px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.agent-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--surface);
+  background: var(--ink);
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+.agent-badge-done {
+  background: #4f9d63;
+}
+
+/* What the agent says it can see. Kept visually quieter than the question so
+   the question still reads as the thing to answer. */
+.agent-observation {
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: rgba(28, 27, 26, 0.04);
+  border-radius: 10px;
+}
+
+.agent-question {
+  font-size: 15.5px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.user-answer {
+  align-self: flex-end;
+  max-width: 82%;
+  padding: 9px 13px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--surface);
+  background: var(--ink);
+  border-radius: 12px 12px 3px 12px;
+}
+.user-answer b {
+  opacity: 0.55;
+  margin-right: 5px;
+}
+
+.agent-thinking {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.agent-directive {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  background: rgba(79, 157, 99, 0.09);
+  border: 1px solid rgba(79, 157, 99, 0.32);
+  border-radius: 11px;
+}
+.agent-directive .agent-badge {
+  align-self: flex-start;
+  margin-right: 0;
+}
+
+.offline-tag {
+  margin-left: 8px;
+  padding: 2px 7px;
+  font-size: 9.5px;
+  color: #8a5a12;
+  background: #fdf0d5;
+  border: 1px solid #efd9a8;
+  border-radius: 999px;
+}
+
+.error-note .btn {
+  margin-left: 10px;
+}

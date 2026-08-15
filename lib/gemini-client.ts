@@ -1,0 +1,157 @@
+/**
+ * Browser side of the Gemini integration. Talks only to our own routes - the
+ * API key either lives in the server env or is passed through from the settings
+ * dialog, and is never sent anywhere except our own origin.
+ */
+
+/** Session-only, per the no-persistence rule: cleared when the tab closes. */
+const KEY_STORAGE = 'sketchime.gemini.key'
+
+export function loadApiKey(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.sessionStorage.getItem(KEY_STORAGE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveApiKey(key: string): void {
+  try {
+    if (key.trim()) window.sessionStorage.setItem(KEY_STORAGE, key.trim())
+    else window.sessionStorage.removeItem(KEY_STORAGE)
+  } catch {
+    /* private mode - the key just won't survive a reload */
+  }
+}
+
+export interface ServerConfig {
+  hasServerKey: boolean
+  textModel: string
+  videoModel: string
+}
+
+export async function fetchConfig(): Promise<ServerConfig> {
+  const res = await fetch('/api/config', { cache: 'no-store' })
+  if (!res.ok) throw new Error('Could not read server config.')
+  return (await res.json()) as ServerConfig
+}
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  const json = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`)
+  return json
+}
+
+export async function revisePrompt(instruction: string, apiKey: string): Promise<string> {
+  const { revised } = await postJson<{ revised: string }>('/api/revise', { instruction, apiKey })
+  return revised
+}
+
+export interface GenerateInput {
+  prompt: string
+  imageA: string
+  imageB: string
+  apiKey: string
+  /** Called with the operation name as soon as generation is accepted, so the
+   * caller can persist it and survive a re-render. */
+  onOperation?(name: string): void
+  /** Cooperative cancellation - polling stops when this returns true. */
+  isCancelled?(): boolean
+}
+
+/** How often to ask whether the render is done. Veo takes on the order of
+ * minutes, so a tight poll would just burn quota. */
+const POLL_MS = 8000
+/** Give up after this long rather than polling forever on a stuck operation. */
+const POLL_TIMEOUT_MS = 10 * 60 * 1000
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Full generation lifecycle: start, poll to completion, then pull the bytes
+ * through our proxy and hand back a blob URL the <video> tag can play.
+ *
+ * The caller owns the returned URL and must revokeObjectURL it when done.
+ */
+export async function generateClip(input: GenerateInput): Promise<string> {
+  const { operation } = await postJson<{ operation: string }>('/api/veo', {
+    action: 'start',
+    prompt: input.prompt,
+    imageA: input.imageA,
+    imageB: input.imageB,
+    apiKey: input.apiKey
+  })
+  input.onOperation?.(operation)
+
+  const deadline = Date.now() + POLL_TIMEOUT_MS
+  let uri: string | undefined
+
+  for (;;) {
+    if (input.isCancelled?.()) throw new Error('Cancelled.')
+    if (Date.now() > deadline) {
+      throw new Error('Timed out waiting for the video (10 min). The operation may still finish.')
+    }
+
+    await sleep(POLL_MS)
+    if (input.isCancelled?.()) throw new Error('Cancelled.')
+
+    const res = await postJson<{ done: boolean; videoUri?: string; error?: string }>('/api/veo', {
+      action: 'poll',
+      operation,
+      apiKey: input.apiKey
+    })
+    if (res.error) throw new Error(res.error)
+    if (res.done) {
+      uri = res.videoUri
+      break
+    }
+  }
+
+  if (!uri) throw new Error('Generation finished without a video.')
+
+  const res = await fetch('/api/veo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'fetch', uri, apiKey: input.apiKey })
+  })
+  if (!res.ok) {
+    const msg = (await res.json().catch(() => ({}))) as { error?: string }
+    throw new Error(msg.error || `Video download failed (${res.status}).`)
+  }
+  return URL.createObjectURL(await res.blob())
+}
+
+/* ---------- board agents ---------- */
+
+export interface BoardTurnPayload {
+  role: string
+  topic: string
+  objective: string
+  briefQuestion: string
+  intent: string
+  styleNote: string
+  imageA: string
+  imageB: string
+  history: { question: string; answer: string }[]
+  turnsRemaining: number
+  apiKey: string
+}
+
+export interface BoardTurnReply {
+  observation: string
+  satisfied: boolean
+  question?: string
+  options?: { key: string; text: string }[]
+  directive?: string
+}
+
+/** Ask one board member for its next move: another question, or its directive. */
+export async function askBoard(payload: BoardTurnPayload): Promise<BoardTurnReply> {
+  return postJson<BoardTurnReply>('/api/board', payload)
+}
