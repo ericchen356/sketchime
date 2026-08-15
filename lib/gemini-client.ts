@@ -200,7 +200,10 @@ export interface BoardTurnPayload {
   imageA: string
   imageB: string
   history: { question: string; answer: string }[]
+  defaultDirective: string
   turnsRemaining: number
+  /** Forbid another question; the agent must commit this turn. */
+  mustCommit?: boolean
   apiKey: string
 }
 
@@ -214,5 +217,5 @@ export interface BoardTurnReply {
 
 /** Ask one board member for its next move: another question, or its directive. */
 export async function askBoard(payload: BoardTurnPayload): Promise<BoardTurnReply> {
-  return postJson<BoardTurnReply>('/api/board', payload)
+  return postJson<BoardTurnReply>('/api/board', payload, BOARD_TIMEOUT_MS)
 }

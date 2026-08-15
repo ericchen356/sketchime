@@ -23,6 +23,8 @@ export const BOARD_STEPS: BoardStep[] = [
       { key: 'B', text: 'Ease-In: Start slowly, then accelerate fast towards the end frame' },
       { key: 'C', text: 'Ease-Out: Burst into motion quickly, then gently settle into the end frame' }
     ],
+    defaultDirective:
+      'Move at a steady, even pace, with the motion spread evenly across the full five seconds.',
     compilesInto: 'easing'
   },
   {
@@ -37,6 +39,8 @@ export const BOARD_STEPS: BoardStep[] = [
       { key: 'B', text: 'Pan/Follow camera: Track the moving subject from Start frame to End frame' },
       { key: 'C', text: 'Dynamic zoom: Zoom in or out smoothly to match scale changes between keyframes' }
     ],
+    defaultDirective:
+      'Hold the camera completely still and let the subject move within a fixed frame.',
     compilesInto: 'camera'
   },
   {
@@ -52,6 +56,8 @@ export const BOARD_STEPS: BoardStep[] = [
       { key: 'B', text: 'Rigid joint movement: Rotate limbs smoothly without deforming line art' },
       { key: 'C', text: 'Frame-by-frame snappy action with secondary motion (hair/clothing sway)' }
     ],
+    defaultDirective:
+      'Move the existing line art by rotation and translation only, keeping shapes undeformed and stroke weight constant.',
     compilesInto: 'physics'
   },
   {
@@ -66,6 +72,8 @@ export const BOARD_STEPS: BoardStep[] = [
       { key: 'B', text: 'Add dynamic action lines/motion blurs to emphasize movement' },
       { key: 'C', text: 'Morph background elements seamlessly if backgrounds differ between frames' }
     ],
+    defaultDirective:
+      'Keep the background clean and unchanged for the whole shot, adding no extra effects.',
     compilesInto: 'environment'
   }
 ]

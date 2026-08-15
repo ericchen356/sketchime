@@ -50,6 +50,10 @@ export function BoardSurvey({
   const [error, setError] = useState<string | null>(null)
   const [custom, setCustom] = useState('')
   const [pending, setPending] = useState<OptionKey | null>(null)
+  /** Seconds the current agent has been thinking. Shown from 3s so a normal
+   * 2-second turn stays quiet, but a long one is visibly still running rather
+   * than ambiguously stuck. */
+  const [elapsed, setElapsed] = useState(0)
 
   const step = BOARD_STEPS[index]
   const thread = board[step.id]
@@ -63,28 +67,37 @@ export function BoardSurvey({
 
   const satisfied = (t: BoardThread | undefined): boolean => !!t?.satisfied && !!t.directive
 
-  /** Ask the current agent for its next move, given the thread so far. */
+  /** Ask the current agent for its next move, given the thread so far.
+   * `force` makes this the agent's last turn: it must commit a directive. */
   const advanceAgent = useCallback(
-    async (thread: BoardThread) => {
+    async (thread: BoardThread, force = false) => {
       const mine = ++requestId.current
       setThinking(true)
       setError(null)
 
       const answered = thread.turns.filter((t) => t.answer)
       const turnsRemaining = Math.max(1, MAX_TURNS_PER_AGENT - thread.turns.length)
+      // The cap is enforced HERE and again on the server - the prompt alone
+      // does not stop a chatty agent from asking forever.
+      const mustCommit = force || thread.turns.length >= MAX_TURNS_PER_AGENT
 
       // Offline: no agent, no vision — fall back to the spec's fixed question,
       // and treat the first answer as final.
       if (offline) {
         if (requestId.current !== mine) return
-        const next: BoardThread = answered.length
-          ? {
-              ...thread,
-              satisfied: true,
-              offline: true,
-              directive: offlineDirective(step, answered[answered.length - 1].answer!.text)
-            }
-          : { turns: [{ ...offlineTurn(step) }], satisfied: false, offline: true }
+        const last = answered[answered.length - 1]?.answer?.text
+        const next: BoardThread =
+          last || force
+            ? {
+                ...thread,
+                satisfied: true,
+                offline: true,
+                // Forcing a commit before anything was answered is legal, and
+                // there is no agent here to improvise - fall back to the step's
+                // own first option rather than indexing an empty list.
+                directive: offlineDirective(step, last || step.options[0].text)
+              }
+            : { turns: [{ ...offlineTurn(step) }], satisfied: false, offline: true }
         setBoard((b) => ({ ...b, [step.id]: next }))
         setThinking(false)
         return
@@ -96,20 +109,33 @@ export function BoardSurvey({
           topic: step.topic,
           objective: step.objective,
           briefQuestion: step.question,
+          defaultDirective: step.defaultDirective,
           intent,
           styleNote,
           imageA,
           imageB,
           history: answered.map((t) => ({ question: t.question, answer: t.answer!.text })),
           turnsRemaining,
+          mustCommit,
           apiKey
         })
         if (requestId.current !== mine) return
 
-        if (reply.satisfied) {
+        if (reply.satisfied || mustCommit) {
           setBoard((b) => ({
             ...b,
-            [step.id]: { ...thread, satisfied: true, directive: reply.directive }
+            [step.id]: {
+              ...thread,
+              satisfied: true,
+              // A forced turn that still came back with a question falls back to
+              // the user's own last answer rather than an empty directive.
+              // Never step.question here: a question in the directive slot ends
+              // up in the prompt telling the video model nothing.
+              directive:
+                reply.directive?.trim() ||
+                answered[answered.length - 1]?.answer?.text ||
+                step.defaultDirective
+            }
           }))
         } else {
           const turn: BoardTurn = {
@@ -132,13 +158,26 @@ export function BoardSurvey({
     [offline, step, intent, styleNote, imageA, imageB, apiKey]
   )
 
+  /**
+   * Which steps have already had their opening question requested. A ref, not
+   * state, so it cannot itself trigger a render.
+   *
+   * This replaces an earlier `if (thread || thinking) return` guard, which read
+   * `thinking` without depending on it: if a step became current while a
+   * request was still in flight, the effect bailed and never re-ran when
+   * `thinking` cleared, so that agent was never asked at all. The UI sat on
+   * "Waiting…" forever with nothing in flight - a hang that looked exactly like
+   * slowness.
+   */
+  const opened = useRef<Set<string>>(new Set())
+
   // Opening move: a step the user has arrived at with no turns yet needs its
   // agent to look at the frames and ask.
   useEffect(() => {
-    if (thread || thinking) return
+    if (thread || opened.current.has(step.id)) return
+    opened.current.add(step.id)
     void advanceAgent({ turns: [], satisfied: false })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step.id, thread])
+  }, [step.id, thread, advanceAgent])
 
   // Once an agent commits, move on — or finish the board.
   useEffect(() => {
@@ -152,6 +191,16 @@ export function BoardSurvey({
     }, 650)
     return () => clearTimeout(t)
   }, [thread, index])
+
+  useEffect(() => {
+    if (!thinking) {
+      setElapsed(0)
+      return
+    }
+    const started = Date.now()
+    const id = setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 500)
+    return () => clearInterval(id)
+  }, [thinking])
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
@@ -179,6 +228,12 @@ export function BoardSurvey({
     setPending(null)
     setCustom('')
     void advanceAgent(updated)
+  }
+
+  /** Cut the questioning short: the agent decides from what it already has. */
+  const commitNow = (): void => {
+    if (!thread || thinking) return
+    void advanceAgent(thread, true)
   }
 
   const allDone = BOARD_STEPS.every((s) => satisfied(board[s.id]))
@@ -286,12 +341,20 @@ export function BoardSurvey({
             </div>
           ))}
 
+          {awaitingAnswer && turns.length > 1 && (
+            <p className="turn-note">
+              Question {turns.length} of up to {MAX_TURNS_PER_AGENT}. {step.role} will commit after
+              this one.
+            </p>
+          )}
+
           {thinking && (
             <p className="agent-thinking">
               <span className="spinner" aria-hidden="true" />
               {turns.length === 0
                 ? `${step.role} is studying your keyframes…`
                 : `${step.role} is considering your answer…`}
+              {elapsed >= 3 && <span className="elapsed">{elapsed}s</span>}
             </p>
           )}
 
@@ -325,9 +388,21 @@ export function BoardSurvey({
               Compile prompt
             </button>
           ) : (
-            <button className="btn btn-primary" onClick={submit} disabled={!answerable}>
-              {awaitingAnswer ? 'Send answer' : 'Waiting…'}
-            </button>
+            <div className="foot-actions">
+              {awaitingAnswer && (
+                <button
+                  className="btn"
+                  onClick={commitNow}
+                  disabled={thinking}
+                  title="Stop questioning and have this member decide with what it already knows"
+                >
+                  Enough — decide
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={submit} disabled={!answerable}>
+                {awaitingAnswer ? 'Send answer' : 'Waiting…'}
+              </button>
+            </div>
           )}
         </footer>
       </div>

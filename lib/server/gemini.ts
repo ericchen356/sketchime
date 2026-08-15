@@ -515,7 +515,12 @@ export interface BoardTurnRequest {
   imageB: string
   /** Prior exchanges in this agent's thread, oldest first. */
   history: { question: string; answer: string }[]
+  /** Safe instruction to fall back on. NEVER the brief question - see below. */
+  defaultDirective: string
   turnsRemaining: number
+  /** No more questions allowed - commit a directive on this turn. Enforced in
+   * code below, not merely requested in the prompt. */
+  mustCommit?: boolean
 }
 
 export interface BoardTurnResponse {
@@ -547,6 +552,19 @@ const BOARD_SCHEMA = {
 } as const
 
 /**
+ * Last-resort directive when an agent is forced to commit and still gives
+ * nothing usable: restate what the user actually chose. Blunt, but it is their
+ * own words and it keeps the compiled prompt truthful.
+ */
+function summariseHistory(req: BoardTurnRequest): string {
+  const answers = req.history.map((h) => h.answer.trim()).filter(Boolean)
+  // Falling back to briefQuestion here was a bug: it put a QUESTION into the
+  // prompt sent to the video model, where it directed nothing at all.
+  if (answers.length === 0) return req.defaultDirective
+  return answers.map((a) => (a.endsWith('.') ? a : `${a}.`)).join(' ')
+}
+
+/**
  * One turn of one board member. The agent is shown BOTH keyframes and keeps
  * asking follow-ups until it is satisfied it understands the shot - at which
  * point it stops asking and writes the directive that Stage 2 compiles in.
@@ -575,11 +593,16 @@ The drawing style: ${req.styleNote.trim() || '(raw hand-drawn sketch)'}
 Conversation so far with the user:
 ${transcript}
 
-You have ${req.turnsRemaining} question(s) left before you MUST commit.
+${
+    req.mustCommit
+      ? 'THIS IS YOUR FINAL TURN. Do NOT ask another question. Set satisfied=true and write your directive now, using your best reading of the answers above.'
+      : `You have ${req.turnsRemaining} question(s) left before you MUST commit.`
+  }
 
 HOW TO WORK:
 - Look at the two images first. "observation" must cite something concrete and specific you can actually see in them (a subject, a pose change, a position shift, a scale change, what is drawn in one frame but not the other). Never write a generic observation that would fit any drawing.
-- If you genuinely still need information to direct your remit well, set satisfied=false and ask ONE question, with EXACTLY THREE options keyed "A", "B", "C". The options must be written for THIS drawing — name what you see in them. Never offer generic textbook choices.
+- PREFER TO COMMIT. Your default is to ask one good question and then decide. Ask a follow-up ONLY when the answer so far leaves your remit genuinely undecidable — not to confirm, refine, or explore a detail you could reasonably choose yourself. A director who keeps asking is wasting the user's time.
+- If you do still need information, set satisfied=false and ask ONE question, with EXACTLY THREE options keyed "A", "B", "C". The options must be written for THIS drawing — name what you see in them. Never offer generic textbook choices.
 - Do not ask about anything outside your remit; another board member covers it.
 - Do not re-ask something the user already answered above.
 - If the answers so far are enough, or you have 1 turn left, set satisfied=true and write "directive".
@@ -648,13 +671,24 @@ Answer as JSON matching the schema. When satisfied=true, omit question and optio
     .slice(0, 3)
     .map((o, i) => ({ key: ['A', 'B', 'C'][i], text: o.text.trim() }))
 
+  // HARD STOP. The prompt asks the agent to commit; this guarantees it. Without
+  // this the follow-up loop is unbounded and a chatty agent can keep a user
+  // answering questions indefinitely.
+  if (req.mustCommit && !parsed.satisfied) {
+    return {
+      observation: parsed.observation?.trim() ?? '',
+      satisfied: true,
+      directive: parsed.directive?.trim() || summariseHistory(req)
+    }
+  }
+
   if (!parsed.satisfied && (!parsed.question?.trim() || options.length < 3)) {
     // The agent wanted to continue but produced an unusable question. Treat it
     // as done rather than showing an empty prompt with no way forward.
     return {
       observation: parsed.observation ?? '',
       satisfied: true,
-      directive: parsed.directive?.trim() || req.briefQuestion
+      directive: parsed.directive?.trim() || req.defaultDirective
     }
   }
 

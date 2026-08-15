@@ -26,13 +26,26 @@ export function answeredCount(board: BoardThreads): number {
 }
 
 /**
- * What a step contributes to the prompt. The agent's directive is the primary
- * output; the raw answers are appended only when the user wrote something
- * custom the directive might have compressed away.
+ * A directive is an instruction to a video model. Anything that reads as a
+ * question is not one - it is almost certainly the board's own prompt text
+ * leaking through a fallback, and shipping it would tell the model nothing.
+ */
+export function looksLikeQuestion(text: string): boolean {
+  const t = text.trim()
+  if (!t) return true
+  if (t.endsWith('?')) return true
+  return /^(how|what|which|should|would|do|does|can|is|are|where|when|why)\b/i.test(t)
+}
+
+/**
+ * What a step contributes to the prompt, sanitised. Applied at COMPILE time, not
+ * just at capture time, so a board answered before this check existed is still
+ * repaired rather than baking a question into the prompt forever.
  */
 export function stepDirective(board: BoardThreads, step: BoardStep): string {
-  const thread = board[step.id]
-  return thread?.directive?.trim() ?? ''
+  const raw = board[step.id]?.directive?.trim() ?? ''
+  if (!raw || looksLikeQuestion(raw) || raw === step.question) return step.defaultDirective
+  return raw.endsWith('.') ? raw : `${raw}.`
 }
 
 /**

@@ -85,6 +85,12 @@ export interface BoardStep {
   objective: string
   question: string
   options: BoardOption[]
+  /**
+   * Safe, neutral instruction used when an agent commits without producing a
+   * directive. It must read as a DIRECTION, never as a question - anything put
+   * here is inserted verbatim into the prompt sent to the video model.
+   */
+  defaultDirective: string
   /** Which line of the compiled prompt this step feeds. */
   compilesInto: 'easing' | 'camera' | 'physics' | 'environment'
 }

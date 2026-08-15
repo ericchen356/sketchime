@@ -24,6 +24,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     )
   }
 
+  const started = Date.now()
   try {
     const result = await boardTurn(
       {
@@ -36,12 +37,27 @@ export async function POST(req: Request): Promise<NextResponse> {
         imageA: body.imageA,
         imageB: body.imageB,
         history: body.history ?? [],
-        turnsRemaining: Math.max(1, body.turnsRemaining ?? 1)
+        defaultDirective: body.defaultDirective ?? 'Keep the motion simple and consistent.',
+        turnsRemaining: Math.max(1, body.turnsRemaining ?? 1),
+        mustCommit: !!body.mustCommit
       },
       resolveKey(body.apiKey)
     )
+    // Names the agent and what it decided, so a slow or stuck board can be read
+    // straight off the server log instead of guessed at.
+    console.log(
+      `[board] ${body.role} turn ${(body.history?.length ?? 0) + 1}` +
+        `${body.mustCommit ? ' (must commit)' : ''} -> ${
+          result.satisfied ? 'COMMITTED' : 'asked a question'
+        } in ${Date.now() - started}ms`
+    )
     return NextResponse.json(result)
   } catch (e) {
+    console.warn(
+      `[board] ${body.role} FAILED after ${Date.now() - started}ms — ${
+        e instanceof Error ? e.message : 'unknown'
+      }`
+    )
     const status = e instanceof GeminiError ? e.status : 500
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'The board member failed to respond.' },
