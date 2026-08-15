@@ -14,7 +14,7 @@ There is no database and no accounts. Drawings are kept in this browser's
 localStorage and finished videos in IndexedDB, so a reload does not lose your
 work; nothing leaves the machine except what is sent to Gemini.
 
-## How it works
+### How it works
 
 1. **Add a clip.** It gets a **first frame** and a **last frame**.
 2. **Draw them** in the full-screen canvas, with the other frame showing through
