@@ -286,9 +286,21 @@ export function Studio({ boardId }: Props): React.JSX.Element {
         confirmLabel: 'Delete this clip',
         danger: true,
         onConfirm: () => {
+          // Release the in-memory blob as well as the stored copy. An object URL
+          // pins its blob until it is revoked, and the set below is only drained
+          // when the whole view unmounts - which, in a single-page session,
+          // means never. Deleting several rendered clips would hold on to a few
+          // megabytes each for the rest of the session. Regenerating already
+          // revoked the URL it replaced; deleting did not.
+          const url = storyboardRef.current.clips.find((c) => c.id === clipId)?.videoUrl
+          if (url) {
+            URL.revokeObjectURL(url)
+            objectUrls.current.delete(url)
+          }
+
           setStoryboard((sb) => removeClip(sb, clipId))
           setSelectedId((id) => (id === clipId ? null : id))
-          // Otherwise the bytes linger with nothing referencing them.
+          // Otherwise the bytes linger on disk with nothing referencing them.
           void deleteVideo(clipId)
         }
       })
