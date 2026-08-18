@@ -128,12 +128,31 @@ export function listBoards(): BoardMeta[] {
   )
 }
 
+/**
+ * The next unused "Board N".
+ *
+ * Counting boards was wrong: create three, delete the first, create another,
+ * and the count is 2 so the new board is named "Board 3" - which already
+ * exists. Two identically named boards are genuinely ambiguous on the home
+ * page, where the name is the only thing distinguishing an empty board from
+ * another empty board.
+ *
+ * Checking names rather than counting also covers a board manually renamed to
+ * "Board 7".
+ */
+function nextBoardName(boards: BoardMeta[]): string {
+  const taken = new Set(boards.map((b) => b.name))
+  let n = boards.length + 1
+  while (taken.has(`Board ${n}`)) n++
+  return `Board ${n}`
+}
+
 export function createBoard(name?: string): BoardMeta {
   const index = readIndex()
   const now = new Date().toISOString()
   const meta: BoardMeta = {
     id: newId(),
-    name: name?.trim() || `Board ${index.boards.length + 1}`,
+    name: name?.trim() || nextBoardName(index.boards),
     createdAt: now,
     updatedAt: now,
     clips: 0
