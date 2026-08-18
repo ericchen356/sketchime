@@ -596,7 +596,10 @@ function summariseHistory(req: BoardTurnRequest): string {
   const answers = req.history.map((h) => h.answer.trim()).filter(Boolean)
   // Falling back to briefQuestion here was a bug: it put a QUESTION into the
   // prompt sent to the video model, where it directed nothing at all.
-  if (answers.length === 0) return req.defaultDirective
+  // The route always supplies defaultDirective, but a directive is what ends up
+  // in a paid video prompt - so never let a missing one become `undefined`
+  // there.
+  if (answers.length === 0) return req.defaultDirective || 'Keep the motion simple and consistent.'
   return answers.map((a) => (a.endsWith('.') ? a : `${a}.`)).join(' ')
 }
 
@@ -645,7 +648,7 @@ Conversation so far with the user:
 ${transcript}
 
 Facets of your remit to work through, one per question, in whatever order suits the shot:
-${req.probes.map((p) => `- ${p}`).join('\n')}
+${(req.probes ?? []).map((p) => `- ${p}`).join('\n')}
 
 ${
     req.mustCommit
