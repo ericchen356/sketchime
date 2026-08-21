@@ -165,7 +165,7 @@ export function Studio({ boardId }: Props): React.JSX.Element {
       let next = sb
       let changed = false
       for (const c of sb.clips) {
-        const prompt = compilePrompt(c, sb.styleNote)
+        const prompt = compilePrompt(c, sb.styleNote, effectiveEndMode(sb, c.id))
         if (prompt && prompt !== c.prompt) {
           changed = true
           next = updateClip(next, c.id, {
@@ -231,7 +231,7 @@ export function Studio({ boardId }: Props): React.JSX.Element {
   const recompile = useCallback((sb: Storyboard, clipId: string): Storyboard => {
     const clip = sb.clips.find((c) => c.id === clipId)
     if (!clip) return sb
-    const prompt = compilePrompt(clip, sb.styleNote)
+    const prompt = compilePrompt(clip, sb.styleNote, effectiveEndMode(sb, clipId))
     return updateClip(sb, clipId, {
       prompt: prompt ?? undefined,
       // A recompile makes any earlier revision stale.
@@ -261,7 +261,7 @@ export function Studio({ boardId }: Props): React.JSX.Element {
       // The style note is global, so every compiled prompt has to follow it.
       let next = { ...sb, styleNote }
       for (const c of next.clips) {
-        const prompt = compilePrompt(c, styleNote)
+        const prompt = compilePrompt(c, styleNote, effectiveEndMode(next, c.id))
         next = updateClip(next, c.id, { prompt: prompt ?? undefined })
       }
       return next
